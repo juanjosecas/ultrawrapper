@@ -117,8 +117,6 @@ def predict_video(
 
         if save_to and save_fmt == "parquet":
             append_to_parquet(chunk, save_to)
-        elif save_to:
-            all_dfs.append(chunk)
 
         all_dfs.append(chunk)
 

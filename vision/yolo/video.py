@@ -9,8 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Generator, Optional
 
-import pandas as pd
-
 
 def video_frame_generator(
     video_path: str | Path,
@@ -110,6 +108,10 @@ def write_video_predictions(
     if output_path.exists():
         output_path.unlink()
 
+    # For non-parquet formats accumulate all chunks and write once at the end
+    # to avoid repeated full-file reads.
+    non_parquet_chunks: list[pd.DataFrame] = []
+
     for frames, indices, timestamps in video_frame_generator(video_path, batch_size=batch_size):
         if tracker:
             results = model.track(
@@ -135,14 +137,10 @@ def write_video_predictions(
         if fmt == "parquet":
             append_to_parquet(chunk, output_path)
         else:
-            save_dataframe(
-                pd.concat(
-                    [pd.read_parquet(output_path), chunk] if output_path.exists() else [chunk],
-                    ignore_index=True,
-                ),
-                output_path,
-                fmt=fmt,
-            )
+            non_parquet_chunks.append(chunk)
+
+    if fmt != "parquet" and non_parquet_chunks:
+        save_dataframe(concat_results(non_parquet_chunks), output_path, fmt=fmt)
 
     return output_path
 
