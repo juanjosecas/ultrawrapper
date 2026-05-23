@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ultrawrapper"
+version = "0.1.0"
+description = "Modular, reusable wrapper for Ultralytics YOLO oriented to scientific pipelines"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "ultralytics>=8.3",
+    "torch>=2.1",
+    "torchvision>=0.16",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "albumentations>=1.3",
+    "matplotlib>=3.7",
+    "pyarrow>=14.0",
+    "psutil>=5.9",
+    "pynvml>=11.5",
+    "tqdm>=4.65",
+]
+
+[project.optional-dependencies]
+onnx = ["onnxruntime>=1.17"]
+openvino = ["openvino>=2024.0"]
+polars = ["polars>=0.20"]
+zarr = ["zarr>=2.17"]
+plotly = ["plotly>=5.18"]
+all = [
+    "onnxruntime>=1.17",
+    "openvino>=2024.0",
+    "polars>=0.20",
+    "zarr>=2.17",
+    "plotly>=5.18",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vision*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
