@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # utils.py
@@ -121,7 +119,7 @@ class TestMemory:
 
 class TestSerialization:
     def test_save_load_parquet(self):
-        from vision.yolo.serialization import save_dataframe, load_dataframe
+        from vision.yolo.serialization import load_dataframe, save_dataframe
 
         df = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -131,7 +129,7 @@ class TestSerialization:
             pd.testing.assert_frame_equal(df, loaded)
 
     def test_save_load_csv(self):
-        from vision.yolo.serialization import save_dataframe, load_dataframe
+        from vision.yolo.serialization import load_dataframe, save_dataframe
 
         df = pd.DataFrame({"x": [10, 20]})
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -153,7 +151,7 @@ class TestSerialization:
             assert list(merged["v"]) == [1, 2, 3, 4]
 
     def test_save_load_json(self):
-        from vision.yolo.serialization import save_json, load_json
+        from vision.yolo.serialization import load_json, save_json
 
         obj = {"key": [1, 2, 3], "nested": {"x": np.array([1.0])}}
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -181,14 +179,14 @@ class TestDataframe:
         assert list(df.columns) == expected_cols
 
     def test_concat_results_empty(self):
-        from vision.yolo.dataframe import concat_results, _empty_dataframe
+        from vision.yolo.dataframe import concat_results
 
         result = concat_results([])
         assert isinstance(result, pd.DataFrame)
         assert result.empty
 
     def test_concat_results_merges(self):
-        from vision.yolo.dataframe import concat_results, _empty_dataframe
+        from vision.yolo.dataframe import concat_results
 
         df1 = pd.DataFrame({"frame": [0], "confidence": [0.9]})
         df2 = pd.DataFrame({"frame": [1], "confidence": [0.8]})
@@ -295,8 +293,8 @@ class TestYOLOAnnotations:
 
 class TestCOCOAnnotations:
     def test_write_read_roundtrip(self):
-        from vision.yolo.annotations.internal import Annotation, AnnotationSample
         from vision.yolo.annotations.coco import read, write
+        from vision.yolo.annotations.internal import Annotation, AnnotationSample
 
         sample = AnnotationSample(
             image_path="cat.jpg",
@@ -429,7 +427,7 @@ class TestTrackingDataframe:
         assert set(filtered["track_id"].unique()) == {1}
 
     def test_smooth_tracks(self):
-        from vision.yolo.track import smooth_tracks, build_tracks_dataframe
+        from vision.yolo.track import build_tracks_dataframe, smooth_tracks
 
         df = build_tracks_dataframe(self._make_df())
         smoothed = smooth_tracks(df, window=2)
@@ -441,16 +439,19 @@ class TestTrackingDataframe:
 # ---------------------------------------------------------------------------
 
 class TestPlotting:
-    def test_plot_class_distribution(self):
+    def test_plot_class_distribution_saves_and_returns_none(self):
         from vision.yolo.plotting import plot_class_distribution
 
         df = pd.DataFrame({"class_name": ["cat", "cat", "dog", "dog", "dog"]})
-        fig = plot_class_distribution(df)
-        assert fig is not None
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "classes.png"
+            result = plot_class_distribution(df, save_to=path, show=False)
+            assert result is None
+            assert path.exists()
         import matplotlib.pyplot as plt
-        plt.close(fig)
+        plt.close("all")
 
-    def test_plot_tracking_trajectories(self):
+    def test_plot_tracking_trajectories_saves_and_returns_none(self):
         from vision.yolo.plotting import plot_tracking_trajectories
 
         df = pd.DataFrame(
@@ -463,12 +464,15 @@ class TestPlotting:
                 "ymax": [50.0, 60.0, 70.0],
             }
         )
-        fig = plot_tracking_trajectories(df)
-        assert fig is not None
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "tracks.png"
+            result = plot_tracking_trajectories(df, save_to=path, show=False)
+            assert result is None
+            assert path.exists()
         import matplotlib.pyplot as plt
-        plt.close(fig)
+        plt.close("all")
 
-    def test_plot_video_statistics(self):
+    def test_plot_video_statistics_saves_and_returns_none(self):
         from vision.yolo.plotting import plot_video_statistics
 
         df = pd.DataFrame(
@@ -482,10 +486,47 @@ class TestPlotting:
                 "ymax": [50.0, 60.0, 55.0, 45.0],
             }
         )
-        fig = plot_video_statistics(df)
-        assert fig is not None
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "video_stats.png"
+            result = plot_video_statistics(df, save_to=path, show=False)
+            assert result is None
+            assert path.exists()
         import matplotlib.pyplot as plt
-        plt.close(fig)
+        plt.close("all")
+
+    def test_plot_image_detections_boxes_polygons_keypoints(self):
+        from vision.yolo.plotting import plot_image_detections
+
+        image = np.zeros((120, 160, 3), dtype=np.uint8)
+        df = pd.DataFrame(
+            {
+                "frame": [0],
+                "class_id": [0],
+                "class_name": ["person"],
+                "confidence": [0.95],
+                "xmin": [20.0],
+                "ymin": [15.0],
+                "xmax": [120.0],
+                "ymax": [100.0],
+                "polygon": [[[20, 15], [120, 15], [110, 100], [25, 95]]],
+                "keypoints": [
+                    [
+                        [40.0, 25.0, 0.9],
+                        [35.0, 35.0, 0.9],
+                        [45.0, 35.0, 0.9],
+                        [30.0, 45.0, 0.8],
+                        [50.0, 45.0, 0.8],
+                    ]
+                ],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "detections.png"
+            result = plot_image_detections(image, df, save_to=path, show=False)
+            assert result is None
+            assert path.exists()
+        import matplotlib.pyplot as plt
+        plt.close("all")
 
 
 # ---------------------------------------------------------------------------
@@ -510,11 +551,16 @@ class TestAugmentations:
 
     def test_apply_augmentation(self):
         pytest.importorskip("albumentations")
-        from vision.yolo.augmentations import build_augmentation_pipeline, apply_augmentation
+        from vision.yolo.augmentations import apply_augmentation, build_augmentation_pipeline
 
         pipeline = build_augmentation_pipeline("light", image_size=320)
         image = np.zeros((320, 320, 3), dtype=np.uint8)
-        result = apply_augmentation(pipeline, image, bboxes=[[0.5, 0.5, 0.2, 0.2]], class_labels=[0])
+        result = apply_augmentation(
+            pipeline,
+            image,
+            bboxes=[[0.5, 0.5, 0.2, 0.2]],
+            class_labels=[0],
+        )
         assert "image" in result
         assert result["image"].shape == (320, 320, 3)
 
@@ -573,3 +619,125 @@ class TestVideoInfo:
         gen = video_frame_generator("/nonexistent/video.mp4", batch_size=4)
         batches = list(gen)
         assert batches == []
+
+    def test_draw_predictions_on_frame_changes_pixels(self):
+        pytest.importorskip("cv2")
+        from vision.yolo.video import draw_predictions_on_frame
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        df = pd.DataFrame(
+            {
+                "frame": [0, 1],
+                "track_id": [1, 1],
+                "class_id": [0, 0],
+                "class_name": ["person", "person"],
+                "confidence": [0.2, 0.9],
+                "xmin": [20.0, 40.0],
+                "ymin": [20.0, 40.0],
+                "xmax": [80.0, 100.0],
+                "ymax": [90.0, 110.0],
+                "polygon": [None, None],
+                "keypoints": [None, None],
+            }
+        )
+
+        annotated = draw_predictions_on_frame(
+            frame,
+            df,
+            frame_idx=0,
+            color_by="confidence",
+            draw_tails=True,
+        )
+
+        assert annotated.shape == frame.shape
+        assert np.count_nonzero(annotated) > 0
+
+    def test_write_annotated_video_from_predictions_df(self):
+        cv2 = pytest.importorskip("cv2")
+        from vision.yolo.video import write_annotated_video
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            video_path = tmp / "input.mp4"
+            output_path = tmp / "annotated.mp4"
+            writer = cv2.VideoWriter(
+                str(video_path),
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                5.0,
+                (80, 60),
+            )
+            for _ in range(3):
+                writer.write(np.zeros((60, 80, 3), dtype=np.uint8))
+            writer.release()
+
+            df = pd.DataFrame(
+                {
+                    "frame": [0, 1, 2],
+                    "track_id": [1, 1, 1],
+                    "class_id": [0, 0, 0],
+                    "class_name": ["person", "person", "person"],
+                    "confidence": [0.5, 0.7, 0.9],
+                    "xmin": [10.0, 15.0, 20.0],
+                    "ymin": [10.0, 12.0, 14.0],
+                    "xmax": [40.0, 45.0, 50.0],
+                    "ymax": [50.0, 52.0, 54.0],
+                }
+            )
+
+            result = write_annotated_video(
+                model_path=None,
+                video_path=video_path,
+                output_path=output_path,
+                predictions_df=df,
+                color_by="track_id",
+                draw_tails=True,
+                return_predictions=False,
+            )
+
+            assert result == output_path
+            assert output_path.exists()
+            assert output_path.stat().st_size > 0
+
+    def test_write_annotated_video_from_dataframe_helper(self):
+        cv2 = pytest.importorskip("cv2")
+        from vision.yolo.video import write_annotated_video_from_dataframe
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            video_path = tmp / "input.mp4"
+            output_path = tmp / "annotated_from_df.mp4"
+            writer = cv2.VideoWriter(
+                str(video_path),
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                5.0,
+                (80, 60),
+            )
+            for _ in range(2):
+                writer.write(np.zeros((60, 80, 3), dtype=np.uint8))
+            writer.release()
+
+            df = pd.DataFrame(
+                {
+                    "frame": [0, 1],
+                    "class_id": [0, 0],
+                    "class_name": ["person", "person"],
+                    "confidence": [0.6, 0.8],
+                    "xmin": [10.0, 15.0],
+                    "ymin": [10.0, 12.0],
+                    "xmax": [40.0, 45.0],
+                    "ymax": [50.0, 52.0],
+                }
+            )
+
+            result, returned_df = write_annotated_video_from_dataframe(
+                video_path=video_path,
+                predictions=df,
+                output_path=output_path,
+                color_by="confidence",
+                return_predictions=True,
+            )
+
+            assert result == output_path
+            assert output_path.exists()
+            assert output_path.stat().st_size > 0
+            pd.testing.assert_frame_equal(returned_df.reset_index(drop=True), df)

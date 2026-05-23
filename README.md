@@ -1,151 +1,112 @@
 # ultrawrapper
 
-ultrawrapper es una ayuda sencilla para trabajar con Ultra de una forma más cómoda.
+`ultrawrapper` es una capa simple para usar Ultralytics YOLO en flujos de trabajo con
+Python, pandas y notebooks. La idea central es que las inferencias salgan como
+`DataFrame` y que el ploteo sea directo, sin depender de objetos internos de
+Ultralytics.
 
-La idea de este repositorio es juntar en un solo lugar lo necesario para instalarlo, ponerlo a funcionar y entender el flujo básico sin tener que adivinar pasos.
-
-## Qué vas a encontrar acá
-
-- archivos y scripts para preparar el entorno
-- ejemplos de uso
-- pruebas o notebooks para probar cosas rápido
-- una base simple para adaptar a tu caso
-
-## Antes de empezar
-
-Para usar este repo, lo normal es tener:
-
-- Python 3 instalado
-- Git instalado
-- acceso a una terminal o consola
-- si hace falta, las credenciales o claves del servicio que vayas a usar
-
-Si no estás seguro de tu versión de Python, podés revisar con:
-
-```bash
-python --version
-```
-
-En algunos equipos puede funcionar con:
-
-```bash
-python3 --version
-```
-
-## Cómo bajar el proyecto
-
-Cloná el repositorio:
-
-```bash
-git clone https://github.com/juanjosecas/ultrawrapper.git
-```
-
-Entrá en la carpeta:
-
-```bash
-cd ultrawrapper
-```
-
-## Cómo preparar el entorno
-
-Se recomienda usar un entorno virtual para no mezclar dependencias con otros proyectos.
-
-En macOS o Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-En Windows:
+## Instalacion
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
-```
-
-## Cómo instalar dependencias
-
-Si el repo ya trae un archivo de dependencias, usá este comando:
-
-```bash
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Si también existe un archivo `pyproject.toml`, puede que el proyecto use otra forma de instalación. En ese caso, conviene revisar ese archivo o agregar acá el comando real más adelante.
-
-## Cómo usar el repo
-
-La forma exacta puede cambiar según el archivo principal del proyecto. Si todavía no conocés el punto de entrada, podés hacer esta revisión rápida:
-
-- buscá archivos como `main.py`, `app.py` o notebooks `.ipynb`
-- revisá si hay scripts dentro de carpetas como `src`, `scripts` o similares
-- abrí los notebooks si querés probar el flujo paso a paso
-
-Una forma simple de probar un archivo Python sería:
+Para desarrollo local:
 
 ```bash
-python nombre_del_archivo.py
+pip install -e .
 ```
 
-## Si el proyecto usa variables de entorno
+## Uso rapido
 
-Algunos proyectos necesitan datos como claves, tokens o rutas. Eso suele configurarse con variables de entorno.
+```python
+from vision.yolo.infer import predict_image
+from vision.yolo.plotting import plot_image_detections, plot_class_distribution
 
-Ejemplo en macOS o Linux:
+MODEL = "yolo11n.pt"
+IMAGE = "https://ultralytics.com/images/bus.jpg"
+
+df = predict_image(MODEL, IMAGE, confidence=0.25)
+print(df.head())
+
+plot_image_detections(IMAGE, df, save_to="detections.png")
+plot_class_distribution(df, save_to="classes.png")
+```
+
+Las funciones de `vision.yolo.plotting` muestran el grafico por defecto y guardan
+la imagen si se pasa `save_to`. No hace falta hacer `fig = ...` ni `fig.show()`.
+Para ejecuciones por lotes o tests se puede usar `show=False`.
+
+## Ploteo disponible
+
+- `plot_image_detections`: cajas, poligonos de segmentacion y keypoints en una sola imagen.
+- `plot_bounding_boxes`: solo cajas y labels.
+- `plot_segmentation_masks`: poligonos de segmentacion, con cajas opcionales.
+- `plot_pose_keypoints`: keypoints y skeleton COCO por defecto.
+- `plot_class_distribution`: distribucion de clases.
+- `plot_video_statistics`: resumen de detecciones por frame, confianza, clases y areas.
+- `plot_tracking_trajectories`: trayectorias de objetos trackeados.
+- `plot_training_metrics`, `plot_confusion_matrix`, `plot_precision_recall`, `plot_gpu_usage`.
+
+## Video anotado
+
+Para cargar un video, superponer predicciones y escribir un MP4 anotado:
+
+```python
+from vision.yolo.video import write_annotated_video
+
+out_path, df = write_annotated_video(
+    model_path="yolo11n.pt",
+    video_path="input.mp4",
+    output_path="annotated.mp4",
+    tracker="bytetrack.yaml",      # activa track_id y permite dibujar tails
+    color_by="confidence",         # tambien: "class" o "track_id"
+    draw_tails=True,
+    tail_length=30,
+    save_predictions_to="predictions.parquet",
+    return_predictions=True,
+)
+```
+
+Tambien se puede pasar un `predictions_df` ya calculado para dibujar sin volver a
+correr el modelo.
+
+Si ya corriste `predict_video` y tenes el `DataFrame`:
+
+```python
+from vision.yolo.video import write_annotated_video_from_dataframe
+
+annotated_path = write_annotated_video_from_dataframe(
+    video_path="input.mp4",
+    predictions=df,  # o "predictions.parquet"
+    output_path="annotated_from_df.mp4",
+    color_by="confidence",
+    draw_tails=False,
+)
+```
+
+## Notebooks
+
+Los ejemplos estan en `vision/yolo/notebooks`:
+
+1. `01_detection.ipynb`: deteccion, batch, filtrado y guardado de plots.
+2. `02_segmentation.ipynb`: segmentacion, poligonos y filtros por confianza.
+3. `03_pose.ipynb`: pose, keypoints, skeleton y conversion a tabla larga.
+4. `04_tracking.ipynb`: tracking, estadisticas y trayectorias.
+5. `05_training.ipynb`: entrenamiento, validacion y metricas.
+6. `06_augmentations.ipynb`: Albumentations para imagenes/cajas.
+7. `07_export.ipynb`: exportacion y benchmarks.
+8. `08_annotation_conversion.ipynb`: conversion COCO/YOLO/VOC/LabelMe.
+9. `09_video_processing.ipynb`: procesamiento de video por lotes.
+
+Los notebooks guardan salidas de ejemplo en `vision/yolo/notebooks/outputs/`.
+
+## Tests
 
 ```bash
-export MI_TOKEN="tu_valor"
+python -m pytest tests/test_vision_yolo.py -q
 ```
 
-Ejemplo en Windows PowerShell:
-
-```powershell
-$env:MI_TOKEN="tu_valor"
-```
-
-Si este repo necesita variables concretas, conviene listarlas en esta sección cuando estén definidas.
-
-## Problemas comunes
-
-### No encuentra Python
-
-Probá usando `python3` en vez de `python`.
-
-### No instala dependencias
-
-Primero actualizá pip:
-
-```bash
-python -m pip install --upgrade pip
-```
-
-Y después volvé a intentar.
-
-### Un notebook no abre o falla
-
-Asegurate de tener Jupyter instalado:
-
-```bash
-pip install jupyter
-```
-
-Luego podés abrirlo con:
-
-```bash
-jupyter notebook
-```
-
-## Recomendación simple
-
-Si querés dejar este README realmente útil para cualquiera, el siguiente paso ideal es completar estas tres cosas:
-
-1. cuál es el objetivo concreto del repo
-2. cuál es el comando exacto para correrlo
-3. qué datos o credenciales hacen falta
-
-Con eso, cualquier persona puede empezar mucho más rápido.
-
-## Estado actual
-
-Este README está pensado como guía inicial. Si el proyecto cambia, conviene actualizar estos pasos para que sigan siendo claros y fáciles de usar.
+Si el entorno no tiene `pytest`, instala las dependencias de desarrollo antes de correrlos.
