@@ -7,6 +7,7 @@ or in batches.
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Generator, Optional
 
@@ -274,6 +275,7 @@ def write_annotated_video(
     save_predictions_fmt: str = "parquet",
     return_predictions: bool = False,
     codec: str = "mp4v",
+    annotation_workers: int = 1,
     **kwargs: Any,
 ) -> Path | tuple[Path, pd.DataFrame]:
     """Load a video, overlay YOLO predictions, and write an annotated video.
@@ -311,6 +313,8 @@ def write_annotated_video(
         cap.release()
         raise ValueError(f"Could not open output video for writing: {output_path}")
 
+    annotation_workers = max(1, int(annotation_workers))
+
     model = None
     if predictions_df is None:
         device = device or detect_device()
@@ -329,25 +333,47 @@ def write_annotated_video(
     batch_indices: list[int] = []
     batch_timestamps: list[float] = []
 
+    def _draw_one(frame_and_df: tuple[np.ndarray, pd.DataFrame]) -> np.ndarray:
+        frame, frame_df = frame_and_df
+        return draw_predictions_on_frame(
+            frame,
+            frame_df,
+            color_by=color_by,
+            draw_boxes=draw_boxes,
+            draw_labels=draw_labels,
+            draw_polygons=draw_polygons,
+            draw_keypoints=draw_keypoints,
+            draw_tails=draw_tails,
+            tail_history=tail_history,
+            tail_length=tail_length,
+            keypoint_threshold=keypoint_threshold,
+            box_thickness=box_thickness,
+            label_scale=label_scale,
+            label_thickness=label_thickness,
+        )
+
     def _draw_and_write(frames: list[np.ndarray], frame_dfs: list[pd.DataFrame]) -> None:
-        for frame, frame_df in zip(frames, frame_dfs):
-            annotated = draw_predictions_on_frame(
-                frame,
-                frame_df,
-                color_by=color_by,
-                draw_boxes=draw_boxes,
-                draw_labels=draw_labels,
-                draw_polygons=draw_polygons,
-                draw_keypoints=draw_keypoints,
-                draw_tails=draw_tails,
-                tail_history=tail_history,
-                tail_length=tail_length,
-                keypoint_threshold=keypoint_threshold,
-                box_thickness=box_thickness,
-                label_scale=label_scale,
-                label_thickness=label_thickness,
-            )
+        pairs = list(zip(frames, frame_dfs))
+        if annotation_workers > 1 and not draw_tails and len(pairs) > 1:
+            with ThreadPoolExecutor(max_workers=annotation_workers) as executor:
+                annotated_frames = list(executor.map(_draw_one, pairs))
+        else:
+            annotated_frames = [_draw_one(pair) for pair in pairs]
+
+        for annotated in annotated_frames:
             writer.write(annotated)
+
+    def _flush_prediction_batch(
+        frames: list[np.ndarray],
+        frame_dfs: list[pd.DataFrame],
+    ) -> None:
+        if frames:
+            _draw_and_write(frames, frame_dfs)
+
+    def _frame_predictions(frame_number: int) -> pd.DataFrame:
+        if predictions_df is None:
+            return pd.DataFrame()
+        return predictions_df[predictions_df["frame"] == frame_number]
 
     def _process_model_batch() -> None:
         if not batch_frames or model is None:
@@ -381,16 +407,22 @@ def write_annotated_video(
 
     try:
         if predictions_df is not None:
+            pending_frames: list[np.ndarray] = []
+            pending_dfs: list[pd.DataFrame] = []
             while True:
                 if max_frames is not None and total >= max_frames:
                     break
                 ret, frame = cap.read()
                 if not ret:
                     break
-                frame_df = predictions_df[predictions_df["frame"] == frame_idx]
-                _draw_and_write([frame], [frame_df])
+                pending_frames.append(frame)
+                pending_dfs.append(_frame_predictions(frame_idx))
                 frame_idx += 1
                 total += 1
+                if len(pending_frames) >= batch_size:
+                    _flush_prediction_batch(pending_frames, pending_dfs)
+                    pending_frames, pending_dfs = [], []
+            _flush_prediction_batch(pending_frames, pending_dfs)
             all_dfs.append(predictions_df)
         else:
             while True:
@@ -442,6 +474,8 @@ def write_annotated_video_from_dataframe(
     label_scale: float = 0.5,
     label_thickness: int = 1,
     codec: str = "mp4v",
+    annotation_workers: int = 1,
+    annotation_batch_size: int = 32,
     return_predictions: bool = False,
 ) -> Path | tuple[Path, pd.DataFrame]:
     """Annotate a video using predictions already stored in a DataFrame.
@@ -480,6 +514,8 @@ def write_annotated_video_from_dataframe(
         label_scale=label_scale,
         label_thickness=label_thickness,
         codec=codec,
+        annotation_workers=annotation_workers,
+        batch_size=max(1, annotation_batch_size),
         return_predictions=return_predictions,
     )
 

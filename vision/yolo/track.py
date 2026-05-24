@@ -8,9 +8,61 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from vision.yolo.dataframe import ultralytics_result_to_dataframe, concat_results
+from vision.yolo.dataframe import concat_results, ultralytics_result_to_dataframe
 from vision.yolo.devices import detect_device
+from vision.yolo.metrics import compute_iou
 from vision.yolo.utils import load_model
+
+DEFAULT_TRACKER_CONFIGS: dict[str, dict[str, Any]] = {
+    "bytetrack": {
+        "tracker_type": "bytetrack",
+        "track_high_thresh": 0.25,
+        "track_low_thresh": 0.1,
+        "new_track_thresh": 0.25,
+        "track_buffer": 30,
+        "match_thresh": 0.8,
+        "fuse_score": True,
+    },
+    "botsort": {
+        "tracker_type": "botsort",
+        "track_high_thresh": 0.25,
+        "track_low_thresh": 0.1,
+        "new_track_thresh": 0.25,
+        "track_buffer": 30,
+        "match_thresh": 0.8,
+        "fuse_score": True,
+        "gmc_method": "sparseOptFlow",
+        "proximity_thresh": 0.5,
+        "appearance_thresh": 0.25,
+        "with_reid": False,
+    },
+}
+
+
+def make_tracker_config(
+    base_tracker: str | Path = "bytetrack.yaml",
+    overrides: Optional[dict[str, Any]] = None,
+    save_to: Optional[str | Path] = None,
+) -> Path:
+    """Create a tracker YAML file from a base tracker plus overrides.
+
+    ``base_tracker`` can be ``'bytetrack.yaml'``, ``'botsort.yaml'`` or a path
+    to an existing YAML file. ``overrides`` updates the loaded configuration.
+    """
+    import yaml
+
+    config = _load_tracker_config(base_tracker)
+    if overrides:
+        config = _deep_update(config, overrides)
+
+    if save_to is None:
+        tracker_name = str(base_tracker).replace("\\", "/").split("/")[-1]
+        save_to = Path.cwd() / f"custom_{tracker_name}"
+    output_path = Path(save_to)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as fh:
+        yaml.safe_dump(config, fh, sort_keys=False)
+    return output_path
 
 
 def track_video(
@@ -96,6 +148,163 @@ def track_video(
     return concat_results(all_dfs)
 
 
+def _load_tracker_config(base_tracker: str | Path) -> dict[str, Any]:
+    import yaml
+
+    path = Path(base_tracker)
+    if path.exists():
+        with open(path) as fh:
+            data = yaml.safe_load(fh) or {}
+        return dict(data)
+
+    tracker_key = path.stem.lower()
+    if tracker_key in DEFAULT_TRACKER_CONFIGS:
+        return dict(DEFAULT_TRACKER_CONFIGS[tracker_key])
+
+    ultralytics_path = _find_ultralytics_tracker_yaml(path.name)
+    if ultralytics_path is not None:
+        with open(ultralytics_path) as fh:
+            data = yaml.safe_load(fh) or {}
+        return dict(data)
+
+    raise FileNotFoundError(
+        f"Could not find tracker config {base_tracker!r}. "
+        "Use 'bytetrack.yaml', 'botsort.yaml', or an existing YAML path."
+    )
+
+
+def _find_ultralytics_tracker_yaml(filename: str) -> Optional[Path]:
+    try:
+        import ultralytics
+    except ImportError:
+        return None
+
+    root = Path(ultralytics.__file__).parent
+    for candidate in root.rglob(filename):
+        return candidate
+    return None
+
+
+def _deep_update(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    updated = dict(base)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(updated.get(key), dict):
+            updated[key] = _deep_update(updated[key], value)
+        else:
+            updated[key] = value
+    return updated
+
+
+def track_detections_dataframe(
+    detections_df: pd.DataFrame,
+    iou_threshold: float = 0.3,
+    max_frame_gap: int = 1,
+    same_class_only: bool = True,
+    confidence_threshold: Optional[float] = None,
+    track_id_start: int = 1,
+    overwrite_track_id: bool = True,
+    save_to: Optional[str | Path] = None,
+    save_fmt: str = "parquet",
+) -> pd.DataFrame:
+    """Assign track IDs to an existing video-detection DataFrame.
+
+    This is a lightweight post-processing tracker for detections that were
+    already generated with ``predict_video``. It links boxes between frames by
+    greedy IoU matching, optionally constrained to the same class.
+
+    It does not rerun YOLO and is not ByteTrack/BOT-SORT; use ``track_video``
+    when you need the model-backed Ultralytics trackers.
+    """
+    required = {"frame", "xmin", "ymin", "xmax", "ymax"}
+    missing = required.difference(detections_df.columns)
+    if missing:
+        raise ValueError(f"detections_df is missing required columns: {sorted(missing)}")
+
+    df = detections_df.copy()
+    if df.empty:
+        if "track_id" not in df.columns:
+            df["track_id"] = pd.Series(dtype="Int64")
+        return df
+
+    if confidence_threshold is not None and "confidence" in df.columns:
+        confidence = pd.to_numeric(df["confidence"], errors="coerce")
+        df = df[confidence >= confidence_threshold].copy()
+
+    if not overwrite_track_id and "track_id" in df.columns and df["track_id"].notna().any():
+        return df
+
+    original_order = "__original_order"
+    df[original_order] = np.arange(len(df))
+    sort_cols = ["frame"]
+    ascending = [True]
+    if "confidence" in df.columns:
+        sort_cols.append("confidence")
+        ascending.append(False)
+    df = df.sort_values(sort_cols, ascending=ascending).reset_index(drop=True)
+    df["track_id"] = pd.NA
+
+    active_tracks: dict[int, dict[str, Any]] = {}
+    next_track_id = track_id_start
+
+    for frame in sorted(df["frame"].dropna().unique()):
+        frame_mask = df["frame"] == frame
+        frame_indices = df.index[frame_mask].tolist()
+
+        candidate_pairs: list[tuple[float, int, int]] = []
+        for row_index in frame_indices:
+            row = df.loc[row_index]
+            row_box = _row_box(row)
+            for track_id, track in active_tracks.items():
+                frame_gap = int(frame) - int(track["frame"])
+                if frame_gap <= 0 or frame_gap > max_frame_gap:
+                    continue
+                if same_class_only and not _same_class(row, track["row"]):
+                    continue
+                iou = compute_iou(row_box, track["box"])
+                if iou >= iou_threshold:
+                    candidate_pairs.append((iou, row_index, track_id))
+
+        used_rows: set[int] = set()
+        used_tracks: set[int] = set()
+        for _, row_index, track_id in sorted(candidate_pairs, reverse=True):
+            if row_index in used_rows or track_id in used_tracks:
+                continue
+            df.at[row_index, "track_id"] = track_id
+            used_rows.add(row_index)
+            used_tracks.add(track_id)
+
+        for row_index in frame_indices:
+            if pd.isna(df.at[row_index, "track_id"]):
+                df.at[row_index, "track_id"] = next_track_id
+                next_track_id += 1
+
+            track_id = int(df.at[row_index, "track_id"])
+            row = df.loc[row_index]
+            active_tracks[track_id] = {
+                "frame": int(frame),
+                "box": _row_box(row),
+                "row": row,
+            }
+
+        stale_ids = [
+            track_id
+            for track_id, track in active_tracks.items()
+            if int(frame) - int(track["frame"]) > max_frame_gap
+        ]
+        for track_id in stale_ids:
+            active_tracks.pop(track_id, None)
+
+    df["track_id"] = df["track_id"].astype("Int64")
+    df = df.sort_values(original_order).drop(columns=[original_order]).reset_index(drop=True)
+
+    if save_to:
+        from vision.yolo.serialization import save_dataframe
+
+        save_dataframe(df, save_to, fmt=save_fmt)
+
+    return df
+
+
 def build_tracks_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Enrich a raw tracking DataFrame with computed kinematic fields.
 
@@ -126,6 +335,20 @@ def build_tracks_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     df.drop(columns=["dx", "dy", "dt", "step_dist"], inplace=True)
     return df
+
+
+def _row_box(row: pd.Series) -> list[float]:
+    return [float(row["xmin"]), float(row["ymin"]), float(row["xmax"]), float(row["ymax"])]
+
+
+def _same_class(row: pd.Series, previous_row: pd.Series) -> bool:
+    if "class_id" in row and "class_id" in previous_row:
+        if pd.notna(row["class_id"]) and pd.notna(previous_row["class_id"]):
+            return int(row["class_id"]) == int(previous_row["class_id"])
+    if "class_name" in row and "class_name" in previous_row:
+        if pd.notna(row["class_name"]) and pd.notna(previous_row["class_name"]):
+            return str(row["class_name"]) == str(previous_row["class_name"])
+    return True
 
 
 def compute_track_statistics(df: pd.DataFrame) -> pd.DataFrame:

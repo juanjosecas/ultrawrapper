@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Generator, Optional
 
+import numpy as np
 import pandas as pd
 
-from vision.yolo.dataframe import ultralytics_result_to_dataframe, concat_results
+from vision.yolo.dataframe import concat_results, ultralytics_result_to_dataframe
 from vision.yolo.devices import detect_device
 from vision.yolo.utils import load_model
 
@@ -81,49 +83,138 @@ def predict_video(
     iou: float = 0.45,
     device: Optional[str] = None,
     batch_size: int = 8,
+    tracker: Optional[str] = None,
+    tracker_config: Optional[dict[str, Any]] = None,
+    tracker_config_save_to: Optional[str | Path] = None,
+    tracking_persist: bool = True,
     save_to: Optional[str | Path] = None,
     save_fmt: str = "parquet",
+    imgsz: int = 640,
     **kwargs: Any,
 ) -> pd.DataFrame:
-    """Run inference on a video file, frame by frame.
+    """Run inference or tracking on a video file, frame by frame.
 
     Frames are processed in batches; the video is never fully loaded into
     memory at once.
 
     Parameters
     ----------
+    tracker:
+        Optional Ultralytics tracker config, e.g. ``'bytetrack.yaml'`` or
+        ``'botsort.yaml'``. When provided, ``model.track`` is used instead of
+        ``model.predict`` and the output DataFrame can include ``track_id``.
+    tracker_config:
+        Optional YAML overrides for the tracker, e.g.
+        ``{'track_high_thresh': 0.4, 'track_buffer': 60}``. When provided,
+        a custom tracker YAML is generated and used for this run.
+    tracker_config_save_to:
+        Optional path where the generated tracker YAML should be saved.
+    tracking_persist:
+        Reuse tracker state between batches. Keep ``True`` for normal videos.
     save_to:
         Optional path to persist results incrementally (parquet/feather/csv).
     """
-    from vision.yolo.video import video_frame_generator
+    import cv2
+    import time
     from vision.yolo.serialization import append_to_parquet, save_dataframe
 
+    # get information about the video for progress tracking
+    cap = cv2.VideoCapture(str(video_path))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    dimensions = (
+        int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+    )
+    timestamp = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+    cap.release()
+
+
+
     device = device or detect_device()
+    print(f"Inference on {device}")
+    start_time = time.time()
+
     model = load_model(model_path)
     all_dfs: list[pd.DataFrame] = []
+    temp_dir: Optional[TemporaryDirectory] = None
+    tracker_for_run = tracker
 
-    for batch_frames, batch_indices, batch_timestamps in _batch_video(
-        video_path, batch_size
-    ):
-        results = model.predict(
-            batch_frames, conf=confidence, iou=iou, device=device, verbose=False, **kwargs
+    if tracker_config:
+        from vision.yolo.track import make_tracker_config
+
+        base_tracker = tracker or "bytetrack.yaml"
+        if tracker_config_save_to is None:
+            temp_dir = TemporaryDirectory()
+            tracker_config_save_to = Path(temp_dir.name) / f"custom_{Path(base_tracker).name}"
+        tracker_for_run = str(
+            make_tracker_config(
+                base_tracker=base_tracker,
+                overrides=tracker_config,
+                save_to=tracker_config_save_to,
+            )
         )
-        batch_dfs: list[pd.DataFrame] = []
-        for result, idx, ts in zip(results, batch_indices, batch_timestamps):
-            df = ultralytics_result_to_dataframe(result, frame_idx=idx, timestamp=ts)
-            batch_dfs.append(df)
 
-        chunk = concat_results(batch_dfs)
+    try:
+        for batch_frames, batch_indices, batch_timestamps in _batch_video(
+            video_path, batch_size
+        ):
+            if tracker_for_run:
+                results = model.track(
+                    batch_frames,
+                    tracker=tracker_for_run,
+                    conf=confidence,
+                    iou=iou,
+                    device=device,
+                    persist=tracking_persist,
+                    verbose=False,
+                    imgsz=imgsz,
+                    **kwargs,
+                )
+            else:
+                results = model.predict(
+                    batch_frames,
+                    conf=confidence,
+                    iou=iou,
+                    device=device,
+                    verbose=False,
+                    imgsz=imgsz,
+                    **kwargs,
+                )
+            batch_dfs: list[pd.DataFrame] = []
+            for result, idx, ts in zip(results, batch_indices, batch_timestamps):
+                df = ultralytics_result_to_dataframe(result, frame_idx=idx, timestamp=ts)
+                batch_dfs.append(df)
 
-        if save_to and save_fmt == "parquet":
-            append_to_parquet(chunk, save_to)
+            chunk = concat_results(batch_dfs)
 
-        all_dfs.append(chunk)
+            if save_to and save_fmt == "parquet":
+                append_to_parquet(chunk, save_to)
+
+            all_dfs.append(chunk)
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
 
     final = concat_results(all_dfs)
 
     if save_to and save_fmt != "parquet":
         save_dataframe(final, save_to, fmt=save_fmt)
+    end_time = time.time()
+
+    inference_time = end_time - start_time
+
+    # calculate if the inference was faster than real-time
+    if total_frames > 0 and timestamp > 0:
+        video_duration = timestamp  # in seconds
+        print(f"Video duration: {video_duration:.2f} seconds")
+        print(f"Inference time: {inference_time:.2f} seconds")
+        if inference_time < video_duration:
+            print("Inference was faster than real-time!")
+        else:
+            print("Inference was slower than real-time.")
+
+
+    print(f"Total inference time: {end_time - start_time:.2f} seconds")
 
     return final
 

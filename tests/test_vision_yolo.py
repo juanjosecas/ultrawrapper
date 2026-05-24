@@ -195,6 +195,116 @@ class TestDataframe:
 
 
 # ---------------------------------------------------------------------------
+# infer.py
+# ---------------------------------------------------------------------------
+
+class TestInfer:
+    def test_predict_video_exposes_tracker_options(self):
+        import inspect
+
+        from vision.yolo.infer import predict_video
+
+        signature = inspect.signature(predict_video)
+        assert "tracker" in signature.parameters
+        assert signature.parameters["tracker"].default is None
+        assert "tracker_config" in signature.parameters
+        assert signature.parameters["tracker_config"].default is None
+        assert "tracking_persist" in signature.parameters
+        assert signature.parameters["tracking_persist"].default is True
+
+    def test_predict_video_uses_model_track_when_tracker_is_set(self, monkeypatch):
+        import vision.yolo.infer as infer
+
+        class FakeModel:
+            def __init__(self):
+                self.track_called = False
+                self.predict_called = False
+
+            def track(self, frames, **kwargs):
+                self.track_called = True
+                self.track_kwargs = kwargs
+                return ["result"] * len(frames)
+
+            def predict(self, frames, **kwargs):
+                self.predict_called = True
+                return ["result"] * len(frames)
+
+        fake_model = FakeModel()
+
+        monkeypatch.setattr(infer, "detect_device", lambda: "cpu")
+        monkeypatch.setattr(infer, "load_model", lambda model_path: fake_model)
+        monkeypatch.setattr(
+            infer,
+            "_batch_video",
+            lambda video_path, batch_size: [(["frame0", "frame1"], [0, 1], [0.0, 0.1])],
+        )
+        monkeypatch.setattr(
+            infer,
+            "ultralytics_result_to_dataframe",
+            lambda result, frame_idx, timestamp: pd.DataFrame(
+                {
+                    "frame": [frame_idx],
+                    "track_id": [1],
+                    "timestamp": [timestamp],
+                }
+            ),
+        )
+
+        result = infer.predict_video(
+            "model.pt",
+            "video.mp4",
+            tracker="bytetrack.yaml",
+            tracking_persist=True,
+        )
+
+        assert fake_model.track_called is True
+        assert fake_model.predict_called is False
+        assert fake_model.track_kwargs["tracker"] == "bytetrack.yaml"
+        assert fake_model.track_kwargs["persist"] is True
+        assert list(result["frame"]) == [0, 1]
+
+    def test_predict_video_writes_custom_tracker_config(self, monkeypatch):
+        import yaml
+
+        import vision.yolo.infer as infer
+
+        class FakeModel:
+            def __init__(self):
+                self.tracker_config = None
+
+            def track(self, frames, **kwargs):
+                with open(kwargs["tracker"]) as fh:
+                    self.tracker_config = yaml.safe_load(fh)
+                return ["result"] * len(frames)
+
+        fake_model = FakeModel()
+
+        monkeypatch.setattr(infer, "detect_device", lambda: "cpu")
+        monkeypatch.setattr(infer, "load_model", lambda model_path: fake_model)
+        monkeypatch.setattr(
+            infer,
+            "_batch_video",
+            lambda video_path, batch_size: [(["frame0"], [0], [0.0])],
+        )
+        monkeypatch.setattr(
+            infer,
+            "ultralytics_result_to_dataframe",
+            lambda result, frame_idx, timestamp: pd.DataFrame({"frame": [frame_idx]}),
+        )
+
+        infer.predict_video(
+            "model.pt",
+            "video.mp4",
+            tracker="bytetrack.yaml",
+            tracker_config={"track_high_thresh": 0.45, "track_buffer": 60},
+        )
+
+        assert fake_model.tracker_config["tracker_type"] == "bytetrack"
+        assert fake_model.tracker_config["track_high_thresh"] == 0.45
+        assert fake_model.tracker_config["track_buffer"] == 60
+
+
+# ---------------------------------------------------------------------------
 # metrics.py
 # ---------------------------------------------------------------------------
 
@@ -433,6 +543,75 @@ class TestTrackingDataframe:
         smoothed = smooth_tracks(df, window=2)
         assert "x_center" in smoothed.columns
 
+    def test_track_detections_dataframe_links_boxes(self):
+        from vision.yolo.track import track_detections_dataframe
+
+        detections = pd.DataFrame(
+            {
+                "frame": [0, 0, 1, 1, 2],
+                "class_id": [0, 1, 0, 1, 0],
+                "class_name": ["cat", "dog", "cat", "dog", "cat"],
+                "confidence": [0.9, 0.8, 0.88, 0.82, 0.86],
+                "xmin": [10.0, 100.0, 12.0, 102.0, 14.0],
+                "ymin": [10.0, 100.0, 12.0, 102.0, 14.0],
+                "xmax": [50.0, 140.0, 52.0, 142.0, 54.0],
+                "ymax": [50.0, 140.0, 52.0, 142.0, 54.0],
+                "timestamp": [0.0, 0.0, 0.033, 0.033, 0.066],
+            }
+        )
+
+        tracked = track_detections_dataframe(detections, iou_threshold=0.3)
+
+        assert "track_id" in tracked.columns
+        cat_ids = tracked[tracked["class_name"] == "cat"]["track_id"].dropna().unique()
+        dog_ids = tracked[tracked["class_name"] == "dog"]["track_id"].dropna().unique()
+        assert len(cat_ids) == 1
+        assert len(dog_ids) == 1
+        assert cat_ids[0] != dog_ids[0]
+
+    def test_track_detections_dataframe_can_save(self):
+        from vision.yolo.track import track_detections_dataframe
+
+        detections = pd.DataFrame(
+            {
+                "frame": [0, 1],
+                "class_name": ["cat", "cat"],
+                "confidence": [0.9, 0.8],
+                "xmin": [10.0, 11.0],
+                "ymin": [10.0, 11.0],
+                "xmax": [40.0, 41.0],
+                "ymax": [40.0, 41.0],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "tracks.csv"
+            tracked = track_detections_dataframe(
+                detections,
+                save_to=path,
+                save_fmt="csv",
+            )
+            assert path.exists()
+            assert tracked["track_id"].notna().all()
+
+    def test_make_tracker_config_writes_overrides(self):
+        import yaml
+
+        from vision.yolo.track import make_tracker_config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "custom_bytetrack.yaml"
+            result = make_tracker_config(
+                base_tracker="bytetrack.yaml",
+                overrides={"track_high_thresh": 0.5, "match_thresh": 0.7},
+                save_to=path,
+            )
+            with open(result) as fh:
+                data = yaml.safe_load(fh)
+
+        assert data["tracker_type"] == "bytetrack"
+        assert data["track_high_thresh"] == 0.5
+        assert data["match_thresh"] == 0.7
+
 
 # ---------------------------------------------------------------------------
 # plotting.py (smoke tests – just ensure no exceptions)
@@ -620,6 +799,17 @@ class TestVideoInfo:
         batches = list(gen)
         assert batches == []
 
+    def test_write_annotated_video_from_dataframe_parallel_options(self):
+        import inspect
+
+        from vision.yolo.video import write_annotated_video_from_dataframe
+
+        signature = inspect.signature(write_annotated_video_from_dataframe)
+        assert "annotation_workers" in signature.parameters
+        assert signature.parameters["annotation_workers"].default == 1
+        assert "annotation_batch_size" in signature.parameters
+        assert signature.parameters["annotation_batch_size"].default == 32
+
     def test_draw_predictions_on_frame_changes_pixels(self):
         pytest.importorskip("cv2")
         from vision.yolo.video import draw_predictions_on_frame
@@ -734,6 +924,8 @@ class TestVideoInfo:
                 predictions=df,
                 output_path=output_path,
                 color_by="confidence",
+                annotation_workers=2,
+                annotation_batch_size=2,
                 return_predictions=True,
             )
 

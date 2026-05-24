@@ -77,13 +77,57 @@ Si ya corriste `predict_video` y tenes el `DataFrame`:
 
 ```python
 from vision.yolo.video import write_annotated_video_from_dataframe
+from vision.yolo.track import track_detections_dataframe
+
+tracked_df = track_detections_dataframe(
+    df,
+    iou_threshold=0.3,
+    max_frame_gap=1,
+    same_class_only=True,
+)
 
 annotated_path = write_annotated_video_from_dataframe(
     video_path="input.mp4",
-    predictions=df,  # o "predictions.parquet"
+    predictions=tracked_df,
     output_path="annotated_from_df.mp4",
     color_by="confidence",
+    draw_tails=True,
+)
+```
+
+Para acelerar el dibujo cuando no necesitás tails:
+
+```python
+annotated_path = write_annotated_video_from_dataframe(
+    video_path="input.mp4",
+    predictions=df,
+    output_path="annotated_parallel.mp4",
+    color_by="confidence",
     draw_tails=False,
+    annotation_workers=4,
+    annotation_batch_size=32,
+)
+```
+
+Tambien podés pedir tracking directamente en `predict_video`:
+
+```python
+from vision.yolo.infer import predict_video
+
+tracked_df = predict_video(
+    "yolo11n.pt",
+    "input.mp4",
+    confidence=0.25,
+    batch_size=8,
+    tracker="bytetrack.yaml",
+    tracker_config={
+        "track_high_thresh": 0.35,
+        "track_low_thresh": 0.1,
+        "new_track_thresh": 0.35,
+        "track_buffer": 60,
+        "match_thresh": 0.8,
+    },
+    save_to="predictions_tracked.parquet",
 )
 ```
 
