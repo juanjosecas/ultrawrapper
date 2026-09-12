@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 
 def sample_predictions():
@@ -25,7 +26,7 @@ def test_detection_density_map_shape_and_weight():
     density = detection_density_map(df, image_width=200, image_height=100, bins=10)
 
     assert density.shape == (10, 10)
-    assert density.sum() == np.testing.assert_approx_equal(density.sum(), df["confidence"].sum())
+    assert density.sum() == pytest.approx(df["confidence"].sum())
 
 
 def test_frame_features_one_row_per_frame():
