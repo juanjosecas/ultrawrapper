@@ -36,6 +36,7 @@ explain = [
     "scikit-learn>=1.4",
     "shap>=0.46",
 ]
+video = ["pillow>=10.0"]
 onnx = ["onnxruntime>=1.17"]
 openvino = ["openvino>=2024.0"]
 polars = ["polars>=0.20"]
@@ -44,6 +45,7 @@ plotly = ["plotly>=5.18"]
 all = [
     "scikit-learn>=1.4",
     "shap>=0.46",
+    "pillow>=10.0",
     "onnxruntime>=1.17",
     "openvino>=2024.0",
     "polars>=0.20",
