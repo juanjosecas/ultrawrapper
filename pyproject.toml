@@ -25,12 +25,27 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "jupyterlab>=4.0",
+    "ipykernel>=6.29",
+]
+ml = ["scikit-learn>=1.4"]
+explain = [
+    "scikit-learn>=1.4",
+    "shap>=0.46",
+]
+video = ["pillow>=10.0"]
 onnx = ["onnxruntime>=1.17"]
 openvino = ["openvino>=2024.0"]
 polars = ["polars>=0.20"]
 zarr = ["zarr>=2.17"]
 plotly = ["plotly>=5.18"]
 all = [
+    "scikit-learn>=1.4",
+    "shap>=0.46",
+    "pillow>=10.0",
     "onnxruntime>=1.17",
     "openvino>=2024.0",
     "polars>=0.20",
