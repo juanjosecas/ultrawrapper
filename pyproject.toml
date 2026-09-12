@@ -25,6 +25,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "jupyterlab>=4.0",
+    "ipykernel>=6.29",
+]
 onnx = ["onnxruntime>=1.17"]
 openvino = ["openvino>=2024.0"]
 polars = ["polars>=0.20"]
