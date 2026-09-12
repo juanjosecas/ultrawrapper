@@ -12,7 +12,14 @@ from vision.yolo.video import (
     write_annotated_video,
     write_annotated_video_from_dataframe,
 )
-from vision.yolo.video_io import extract_frames, images_to_video, read_frames, video_info, write_frames
+from vision.yolo.video_io import (
+    extract_frames,
+    images_to_gif,
+    images_to_video,
+    read_frames,
+    video_info,
+    write_frames,
+)
 
 __all__ = [
     "detect_device",
@@ -31,6 +38,7 @@ __all__ = [
     "write_frames",
     "extract_frames",
     "images_to_video",
+    "images_to_gif",
     "video_info",
     "detection_density_map",
     "plot_density_map",
