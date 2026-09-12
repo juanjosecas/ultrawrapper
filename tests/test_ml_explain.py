@@ -6,7 +6,7 @@ import pytest
 def sample_predictions():
     return pd.DataFrame(
         {
-            "frame": [0, 0, 1, 1],
+            "frame": [0, 0, 2, 2],
             "track_id": [1, 2, 1, 2],
             "class_name": ["mouse", "mouse", "mouse", "mouse"],
             "confidence": [0.9, 0.8, 0.85, 0.75],
@@ -14,7 +14,7 @@ def sample_predictions():
             "ymin": [10, 50, 15, 55],
             "xmax": [30, 130, 40, 120],
             "ymax": [40, 90, 45, 95],
-            "timestamp": [0.0, 0.0, 0.1, 0.1],
+            "timestamp": [0.0, 0.0, 0.2, 0.2],
         }
     )
 
@@ -29,7 +29,7 @@ def test_detection_density_map_shape_and_weight():
     assert density.sum() == pytest.approx(df["confidence"].sum())
 
 
-def test_frame_features_one_row_per_frame():
+def test_frame_features_one_row_per_detected_frame():
     from vision.yolo.ml import frame_features
 
     features = frame_features(sample_predictions())
@@ -38,6 +38,16 @@ def test_frame_features_one_row_per_frame():
     assert "detection_count" in features.columns
     assert "count_mouse" in features.columns
     assert features.loc[0, "detection_count"] == 2
+
+
+def test_frame_features_can_restore_empty_frames():
+    from vision.yolo.ml import frame_features
+
+    features = frame_features(sample_predictions(), total_frames=3)
+
+    assert list(features["frame"]) == [0, 1, 2]
+    assert list(features["detection_count"]) == [2, 0, 2]
+    assert list(features["count_mouse"]) == [2, 0, 2]
 
 
 def test_track_features_one_row_per_track():
@@ -54,11 +64,11 @@ def test_track_features_one_row_per_track():
 def test_merge_labels_and_prepare_xy():
     from vision.yolo.ml import frame_features, merge_labels, prepare_xy
 
-    features = frame_features(sample_predictions())
-    labels = pd.DataFrame({"frame": [0, 1], "condition": [0, 1]})
+    features = frame_features(sample_predictions(), total_frames=3)
+    labels = pd.DataFrame({"frame": [0, 1, 2], "condition": [0, 1, 0]})
     dataset = merge_labels(features, labels, on="frame")
     X, y = prepare_xy(dataset, target="condition", drop_columns=["frame"])
 
     assert "condition" not in X.columns
     assert "frame" not in X.columns
-    assert list(y) == [0, 1]
+    assert list(y) == [0, 1, 0]
