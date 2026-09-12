@@ -11,8 +11,14 @@ import pandas as pd
 def frame_features(
     predictions: pd.DataFrame,
     include_class_counts: bool = True,
+    total_frames: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Aggregate one row per video frame from detection-level predictions."""
+    """Aggregate detection-level predictions into one row per video frame.
+
+    When ``total_frames`` is provided, frames with no detections are restored
+    with ``detection_count = 0``. This is important for temporal ML because
+    otherwise absence of detections disappears from the dataset entirely.
+    """
     required = {"frame", "confidence", "xmin", "ymin", "xmax", "ymax"}
     missing = required.difference(predictions.columns)
     if missing:
@@ -49,6 +55,18 @@ def frame_features(
         class_counts = class_counts.reset_index()
         features = features.merge(class_counts, on="frame", how="left")
 
+    if total_frames is not None:
+        if total_frames < 0:
+            raise ValueError("total_frames must be >= 0")
+
+        all_frames = pd.DataFrame({"frame": range(total_frames)})
+        features = all_frames.merge(features, on="frame", how="left")
+        features["detection_count"] = features["detection_count"].fillna(0).astype(int)
+
+        class_columns = [c for c in features.columns if c.startswith("count_")]
+        for column in class_columns:
+            features[column] = features[column].fillna(0).astype(int)
+
     return features.sort_values("frame").reset_index(drop=True)
 
 
@@ -65,7 +83,10 @@ def track_features(predictions: pd.DataFrame) -> pd.DataFrame:
 
     data["center_x"] = (data["xmin"] + data["xmax"]) / 2.0
     data["center_y"] = (data["ymin"] + data["ymax"]) / 2.0
-    data["bbox_area"] = (data["xmax"] - data["xmin"]) * (data["ymax"] - data["ymin"])
+    data["bbox_area"] = (
+        (data["xmax"] - data["xmin"])
+        * (data["ymax"] - data["ymin"])
+    )
     data = data.sort_values(["track_id", "frame"])
 
     data["dx"] = data.groupby("track_id")["center_x"].diff()
@@ -91,14 +112,13 @@ def track_features(predictions: pd.DataFrame) -> pd.DataFrame:
     ).reset_index()
 
     if "class_name" in data.columns:
-        classes = (
-            data.groupby("track_id")["class_name"]
-            .agg(lambda values: values.mode().iloc[0] if not values.mode().empty else values.iloc[0])
-            .reset_index()
-        )
+        classes = data.groupby("track_id")["class_name"].agg(_most_common_value)
+        classes = classes.reset_index()
         features = features.merge(classes, on="track_id", how="left")
 
-    features["track_span_frames"] = features["last_frame"] - features["first_frame"] + 1
+    features["track_span_frames"] = (
+        features["last_frame"] - features["first_frame"] + 1
+    )
     return features
 
 
@@ -107,11 +127,7 @@ def prepare_xy(
     target: str,
     drop_columns: Optional[list[str]] = None,
 ) -> tuple[pd.DataFrame, pd.Series]:
-    """Return numeric/categorical predictors ``X`` and target ``y``.
-
-    This intentionally does not encode categorical columns automatically. Keeping
-    them visible makes preprocessing choices explicit for sklearn pipelines.
-    """
+    """Return predictors ``X`` and target ``y`` without hidden preprocessing."""
     if target not in features.columns:
         raise ValueError(f"Target column not found: {target}")
 
@@ -143,15 +159,24 @@ def shap_values(
 ):
     """Compute SHAP values for a downstream tabular model.
 
-    Requires the optional dependency ``shap``. This function is intended for
-    models trained on features produced by :func:`frame_features` or
-    :func:`track_features`, not for explaining YOLO pixels directly.
+    This is intended for models trained on features produced by
+    :func:`frame_features` or :func:`track_features`, not for explaining YOLO
+    pixels directly.
     """
     try:
         import shap
     except ImportError as exc:
-        raise ImportError("Install SHAP with: pip install -e '.[explain]'") from exc
+        raise ImportError(
+            "Install SHAP with: pip install -e '.[explain]'"
+        ) from exc
 
     data = X.iloc[:max_samples].copy()
     explainer = shap.Explainer(model, data)
     return explainer(data)
+
+
+def _most_common_value(values: pd.Series):
+    mode = values.mode()
+    if not mode.empty:
+        return mode.iloc[0]
+    return values.iloc[0]
