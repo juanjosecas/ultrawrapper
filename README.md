@@ -19,15 +19,15 @@ Para desarrollo local:
 pip install -e .
 ```
 
-Para usar `X-AnyLabeling` como interfaz de anotación opcional:
+To use `X-AnyLabeling` as an optional labeling UI:
 
 ```bash
 pip install -e ".[labeling]"
 ```
 
-Eso instala `x-anylabeling-cvhub[cpu]` como dependencia opcional. Si querés una
-instalación GPU o manejar su entorno por separado, instalalo manualmente según la
-documentación oficial de X-AnyLabeling.
+This installs `x-anylabeling-cvhub[cpu]` as an optional dependency. If you need
+GPU support or want to manage its environment separately, install it manually
+following the official X-AnyLabeling documentation.
 
 ## Uso rapido
 
@@ -157,22 +157,23 @@ Los ejemplos estan en `vision/yolo/notebooks`:
 
 Los notebooks guardan salidas de ejemplo en `vision/yolo/notebooks/outputs/`.
 
-## Labeling con X-AnyLabeling
+## Labeling with X-AnyLabeling
 
-`ultrawrapper` no incorpora el codebase de X-AnyLabeling; lo usa como una
-interfaz opcional de labeling instalada vía `pip`. Esto evita acoplar el repo a
-una GUI externa y mantiene a `ultrawrapper` como capa de conveniencia sobre
-Ultralytics.
+`ultrawrapper` does not vendor the X-AnyLabeling codebase; it treats it as an
+optional UI installed via `pip`. That keeps this repository focused on being a
+thin convenience layer on top of Ultralytics instead of embedding an external
+desktop app.
 
-Según la documentación oficial de X-AnyLabeling, la integración natural es:
+Based on the official X-AnyLabeling documentation, the natural integration path
+is:
 
-- abrir una carpeta de imagenes o una imagen puntual desde `xanylabeling`;
-- importar/exportar anotaciones en YOLO, VOC y COCO;
-- cargar JSON nativos de X-AnyLabeling;
-- usar auto-labeling y batch auto-labeling dentro de la app;
-- reexportar el resultado para seguir procesandolo con `ultrawrapper`.
+- open an image directory or a single image from `xanylabeling`;
+- import and export annotations in YOLO, VOC, and COCO;
+- load native X-AnyLabeling JSON files;
+- use built-in auto-labeling and batch auto-labeling inside the app;
+- export the reviewed result back into `ultrawrapper`.
 
-`ultrawrapper` ahora agrega helpers para ese flujo:
+`ultrawrapper` now adds helpers for that round-trip:
 
 ```python
 from pathlib import Path
@@ -184,24 +185,24 @@ from vision.yolo.labeling import (
     launch_xanylabeling,
 )
 
-# 1) correr inferencia con ultrawrapper
+# 1) run inference with ultrawrapper
 df = predict_image("yolo11n.pt", "image.jpg", confidence=0.25)
 
-# 2) exportar predicciones como pre-labels editables en X-AnyLabeling
+# 2) export predictions as editable pre-labels for X-AnyLabeling
 json_path = export_image_predictions_to_xanylabeling(
     image_path="image.jpg",
     predictions=df,
     output_dir="prelabels",
 )
 
-# 3) abrir la interfaz apuntando a la carpeta de imagenes
+# 3) open the UI against the image directory
 launch_xanylabeling(
     filename="dataset/images",
     output_dir="dataset/labels_xany",
     labels=["person", "car"],
 )
 
-# 4) volver a traer anotaciones editadas al formato que necesites
+# 4) bring edited annotations back into the format you need
 convert_annotations(
     source_dir="dataset/labels_xany",
     target_dir="dataset/labels_yolo",
@@ -212,8 +213,7 @@ convert_annotations(
 )
 ```
 
-También podés convertir datasets ya existentes hacia un formato que X-AnyLabeling
-entiende:
+You can also convert an existing dataset into a format X-AnyLabeling can edit:
 
 ```python
 convert_annotations(
@@ -226,17 +226,16 @@ convert_annotations(
 )
 ```
 
-Notas prácticas:
+Practical notes:
 
-- El helper de exportación a X-AnyLabeling cubre bien detección y segmentación
-  porque salen naturalmente del `DataFrame` actual.
-- X-AnyLabeling si soporta flujos de auto-labeling y carga de anotaciones ya
-  hechas, asi que no hace falta modificar Ultralytics ni clonar su repo para
-  aprovecharlo.
-- Para pose/formatos avanzados conviene seguir usando la conversion nativa de
-  X-AnyLabeling si necesitás conservar todos sus metadatos de grouping.
-- X-AnyLabeling está licenciado bajo GPL-3.0; por eso la integración acá queda
-  como dependencia opcional y no como codigo embebido en este repo MIT.
+- The export helper covers detection and segmentation well because both map
+  cleanly from the current `DataFrame` schema.
+- X-AnyLabeling already supports auto-labeling and importing existing
+  annotations, so there is no need to modify Ultralytics or vendor its repo.
+- For pose or more advanced formats, prefer X-AnyLabeling's native conversion
+  tools when you need to preserve all grouping metadata.
+- X-AnyLabeling is licensed under GPL-3.0, so this repo keeps the integration
+  optional instead of embedding GPL code inside an MIT project.
 
 ## Tests
 

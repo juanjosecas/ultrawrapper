@@ -39,14 +39,14 @@ def read(
             polygon: list[list[float]] = []
 
             if shape_type == "rectangle" and len(points) == 2:
-                x1, y1 = points[0]
-                x2, y2 = points[1]
+                x1, y1 = float(points[0][0]), float(points[0][1])
+                x2, y2 = float(points[1][0]), float(points[1][1])
                 bbox = [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
             elif shape_type == "polygon" and points:
-                xs = [point[0] for point in points]
-                ys = [point[1] for point in points]
+                xs = [float(point[0]) for point in points]
+                ys = [float(point[1]) for point in points]
                 bbox = [min(xs), min(ys), max(xs), max(ys)]
-                polygon = [[float(point[0]), float(point[1])] for point in points]
+                polygon = [[x, y] for x, y in zip(xs, ys)]
             else:
                 continue
 
