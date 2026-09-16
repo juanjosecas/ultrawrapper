@@ -208,6 +208,7 @@ convert_annotations(
     source_fmt="xanylabeling",
     target_fmt="yolo",
     class_names=["person", "car"],
+    image_dir=Path("dataset/images"),
 )
 ```
 

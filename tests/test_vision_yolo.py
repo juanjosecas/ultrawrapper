@@ -337,6 +337,46 @@ class TestAnnotationConversion:
         assert _normalize_format("x_anylabeling") == "xanylabeling"
         assert _normalize_format("xlabel") == "xanylabeling"
 
+    def test_xanylabeling_roundtrip_with_separate_image_dir(self):
+        from vision.yolo.annotations.internal import Annotation, AnnotationSample
+        from vision.yolo.annotations.xanylabeling import read, write
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            images_dir = root / "images"
+            labels_dir = root / "labels_xany"
+            images_dir.mkdir()
+            labels_dir.mkdir()
+
+            image_path = images_dir / "sample.jpg"
+            image_path.write_bytes(b"fake-image")
+
+            write(
+                [
+                    AnnotationSample(
+                        image_path=str(image_path),
+                        width=640,
+                        height=480,
+                        annotations=[
+                            Annotation(
+                                task="detect",
+                                class_id=0,
+                                class_name="person",
+                                bbox=[10.0, 20.0, 30.0, 40.0],
+                            )
+                        ],
+                    )
+                ],
+                labels_dir,
+            )
+
+            samples = read(labels_dir, image_dir=images_dir)
+
+            assert len(samples) == 1
+            assert samples[0].image_path == str(image_path.resolve())
+            assert samples[0].annotations[0].class_name == "person"
+            assert samples[0].annotations[0].bbox == [10.0, 20.0, 30.0, 40.0]
+
 
 # ---------------------------------------------------------------------------
 # infer.py

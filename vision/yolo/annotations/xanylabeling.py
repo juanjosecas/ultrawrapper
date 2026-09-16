@@ -12,9 +12,11 @@ from vision.yolo.annotations.internal import Annotation, AnnotationSample
 def read(
     source_dir: Path,
     class_names: Optional[list[str]] = None,
+    image_dir: Optional[Path] = None,
     **kwargs,
 ) -> list[AnnotationSample]:
     """Read X-AnyLabeling JSON annotation files from *source_dir*."""
+    del kwargs
     samples: list[AnnotationSample] = []
     name_to_id: dict[str, int] = {name: idx for idx, name in enumerate(class_names or [])}
 
@@ -22,7 +24,7 @@ def read(
         with open(json_path) as fh:
             data = json.load(fh)
 
-        image_path = _resolve_image_path(json_path, data.get("imagePath"))
+        image_path = _resolve_image_path(json_path, data.get("imagePath"), image_dir=image_dir)
         width = int(data.get("imageWidth", 0) or 0)
         height = int(data.get("imageHeight", 0) or 0)
 
@@ -135,16 +137,36 @@ def _annotation_to_shape(ann: Annotation) -> dict | None:
     return None
 
 
-def _resolve_image_path(json_path: Path, declared_image_path: str | None) -> str:
+def _resolve_image_path(
+    json_path: Path,
+    declared_image_path: str | None,
+    image_dir: Optional[Path] = None,
+) -> str:
     if declared_image_path:
         declared_path = Path(declared_image_path)
         if declared_path.is_absolute():
             return str(declared_path)
-        return str((json_path.parent / declared_path).resolve())
+
+        search_roots = (
+            [image_dir, json_path.parent]
+            if image_dir is not None
+            else [json_path.parent]
+        )
+        for root in search_roots:
+            candidate = (root / declared_path).resolve()
+            if candidate.exists():
+                return str(candidate)
+        return str((search_roots[0] / declared_path).resolve())
 
     for suffix in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"):
-        candidate = json_path.with_suffix(suffix)
-        if candidate.exists():
-            return str(candidate.resolve())
+        candidates = []
+        if image_dir is not None:
+            candidates.append((image_dir / f"{json_path.stem}{suffix}").resolve())
+        candidates.append(json_path.with_suffix(suffix).resolve())
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
 
+    if image_dir is not None:
+        return str((image_dir / f"{json_path.stem}.jpg").resolve())
     return str(json_path.with_suffix(".jpg").resolve())
