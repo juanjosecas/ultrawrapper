@@ -28,6 +28,7 @@ _READERS: dict[str, str] = {
     "yolo": "vision.yolo.annotations.yolo",
     "voc": "vision.yolo.annotations.voc",
     "labelme": "vision.yolo.annotations.labelme",
+    "xanylabeling": "vision.yolo.annotations.xanylabeling",
     "roboflow": "vision.yolo.annotations.roboflow",
 }
 
@@ -35,6 +36,8 @@ _WRITERS: dict[str, str] = {
     "yolo": "vision.yolo.annotations.yolo",
     "coco": "vision.yolo.annotations.coco",
     "voc": "vision.yolo.annotations.voc",
+    "labelme": "vision.yolo.annotations.labelme",
+    "xanylabeling": "vision.yolo.annotations.xanylabeling",
 }
 
 
@@ -66,8 +69,8 @@ def convert_annotations(
     -------
     List of :class:`AnnotationSample` in the internal format.
     """
-    source_fmt = source_fmt.lower()
-    target_fmt = target_fmt.lower()
+    source_fmt = _normalize_format(source_fmt)
+    target_fmt = _normalize_format(target_fmt)
 
     if source_fmt not in _READERS:
         raise ValueError(f"Unknown source format {source_fmt!r}. Supported: {sorted(_READERS)}.")
@@ -86,3 +89,17 @@ def convert_annotations(
     writer_mod.write(samples, Path(target_dir), class_names=class_names, **kwargs)
 
     return samples
+
+
+def _normalize_format(fmt: str) -> str:
+    normalized = fmt.lower().replace("-", "").replace("_", "")
+    aliases = {
+        "labelme": "labelme",
+        "xanylabeling": "xanylabeling",
+        "xlabel": "xanylabeling",
+        "coco": "coco",
+        "yolo": "yolo",
+        "voc": "voc",
+        "roboflow": "roboflow",
+    }
+    return aliases.get(normalized, fmt.lower())
