@@ -22,7 +22,6 @@ from typing import Optional
 
 from vision.yolo.annotations.internal import AnnotationSample
 
-
 _READERS: dict[str, str] = {
     "coco": "vision.yolo.annotations.coco",
     "yolo": "vision.yolo.annotations.yolo",

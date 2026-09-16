@@ -6,10 +6,9 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Sequence
 
 import pandas as pd
-
 
 _X_ANYLABELING_INSTALL_HINT = (
     "Install it with `pip install -e \".[labeling]\"` or "
@@ -24,19 +23,22 @@ def is_xanylabeling_available(executable: str = "xanylabeling") -> bool:
 
 def launch_xanylabeling(
     filename: str | Path,
-    output_dir: Optional[str | Path] = None,
-    labels: Optional[str | Path | Sequence[str]] = None,
+    output_dir: str | Path | None = None,
+    labels: str | Path | Sequence[str] | None = None,
     autosave: bool = True,
     store_image_data: bool = False,
     sort_labels: bool = True,
     keep_prev: bool = False,
     executable: str = "xanylabeling",
-    extra_args: Optional[Sequence[str]] = None,
+    extra_args: Sequence[str] | None = None,
 ) -> subprocess.Popen:
     """Launch X-AnyLabeling against an image file or directory."""
     executable_path = shutil.which(executable)
     if executable_path is None:
-        raise FileNotFoundError(f"X-AnyLabeling executable {executable!r} was not found. {_X_ANYLABELING_INSTALL_HINT}")
+        raise FileNotFoundError(
+            f"X-AnyLabeling executable {executable!r} was not found. "
+            f"{_X_ANYLABELING_INSTALL_HINT}"
+        )
 
     command = [executable_path, "--filename", str(filename)]
     if output_dir is not None:
@@ -63,9 +65,9 @@ def launch_xanylabeling(
 def export_image_predictions_to_xanylabeling(
     image_path: str | Path,
     predictions: pd.DataFrame,
-    output_dir: Optional[str | Path] = None,
+    output_dir: str | Path | None = None,
     checked: bool = False,
-    tags: Optional[Sequence[str]] = None,
+    tags: Sequence[str] | None = None,
     description: str = "",
 ) -> Path:
     """Export predictions for one image to an X-AnyLabeling JSON file."""
@@ -120,7 +122,7 @@ def export_predictions_to_xanylabeling(
     return exported
 
 
-def _normalize_labels_argument(labels: Optional[str | Path | Sequence[str]]) -> Optional[str]:
+def _normalize_labels_argument(labels: str | Path | Sequence[str] | None) -> str | None:
     if labels is None:
         return None
     if isinstance(labels, (str, Path)):
