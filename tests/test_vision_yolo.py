@@ -473,6 +473,52 @@ class TestAnnotationConversion:
             )
             assert (converted_dir / "sample.json").exists()
 
+    def test_xanylabeling_read_relocates_stale_absolute_image_path(self):
+        from vision.yolo.annotations.xanylabeling import read
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            images_dir = root / "images"
+            labels_dir = root / "labels_xany"
+            images_dir.mkdir()
+            labels_dir.mkdir()
+
+            relocated_image = images_dir / "moved.jpg"
+            relocated_image.write_bytes(b"fake-image")
+            stale_absolute_path = root / "old_location" / "moved.jpg"
+
+            payload = {
+                "version": "x-anylabeling",
+                "flags": {},
+                "tags": [],
+                "shapes": [
+                    {
+                        "label": "person",
+                        "score": 0.9,
+                        "points": [[10.0, 20.0], [30.0, 40.0]],
+                        "group_id": None,
+                        "description": "",
+                        "difficult": False,
+                        "shape_type": "rectangle",
+                        "flags": {},
+                        "attributes": {},
+                    }
+                ],
+                "description": "",
+                "imagePath": str(stale_absolute_path),
+                "imageData": None,
+                "imageHeight": 480,
+                "imageWidth": 640,
+                "checked": False,
+            }
+            with open(labels_dir / "moved.json", "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2)
+
+            samples = read(labels_dir, image_dir=images_dir)
+
+            assert len(samples) == 1
+            assert samples[0].image_path == str(relocated_image.resolve())
+
 
 # ---------------------------------------------------------------------------
 # infer.py

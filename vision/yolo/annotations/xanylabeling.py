@@ -145,8 +145,10 @@ def _resolve_image_path(
 ) -> str:
     if declared_image_path:
         declared_path = Path(declared_image_path)
-        if declared_path.is_absolute():
+        if declared_path.is_absolute() and declared_path.exists():
             return str(declared_path)
+
+        lookup_path = Path(declared_path.name) if declared_path.is_absolute() else declared_path
 
         search_roots = (
             [image_dir, json_path.parent]
@@ -154,10 +156,10 @@ def _resolve_image_path(
             else [json_path.parent]
         )
         for root in search_roots:
-            candidate = (root / declared_path).resolve()
+            candidate = (root / lookup_path).resolve()
             if candidate.exists():
                 return str(candidate)
-        return str((search_roots[0] / declared_path).resolve())
+        return str((search_roots[0] / lookup_path).resolve())
 
     for suffix in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"):
         candidates = []
