@@ -90,7 +90,7 @@ def export_image_predictions_to_xanylabeling(
     }
 
     output_path = output_dir / f"{image_path.stem}.json"
-    with open(output_path, "w") as fh:
+    with open(output_path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2)
     return output_path
 
@@ -194,4 +194,4 @@ def _get_image_size(image_path: Path) -> tuple[int, int]:
             return int(image.shape[1]), int(image.shape[0])
     except Exception:
         pass
-    return 0, 0
+    raise ValueError(f"Could not read image dimensions from {image_path}.")

@@ -239,7 +239,7 @@ class TestLabeling:
                 tags=["seed"],
             )
 
-            with open(output_path) as fh:
+            with open(output_path, encoding="utf-8") as fh:
                 payload = json.load(fh)
             assert output_path.name == "image.json"
             assert payload["imageWidth"] == 640
@@ -270,6 +270,57 @@ class TestLabeling:
             )
 
             assert [path.name for path in exported] == ["a.json", "b.json"]
+
+    def test_export_predictions_to_xanylabeling_accepts_explicit_image_ids(self, monkeypatch):
+        from vision.yolo.labeling import export_predictions_to_xanylabeling
+
+        predictions = pd.DataFrame(
+            [
+                {
+                    "image_id": "img-b",
+                    "class_name": "car",
+                    "xmin": 5,
+                    "ymin": 6,
+                    "xmax": 7,
+                    "ymax": 8,
+                },
+                {
+                    "image_id": "img-a",
+                    "class_name": "person",
+                    "xmin": 1,
+                    "ymin": 2,
+                    "xmax": 3,
+                    "ymax": 4,
+                },
+            ]
+        )
+
+        monkeypatch.setattr("vision.yolo.labeling._get_image_size", lambda _: (100, 50))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exported = export_predictions_to_xanylabeling(
+                image_paths=[Path(tmpdir) / "a.jpg", Path(tmpdir) / "b.jpg"],
+                predictions=predictions,
+                output_dir=tmpdir,
+                index_column="image_id",
+                image_ids=["img-a", "img-b"],
+            )
+
+            assert [path.name for path in exported] == ["a.json", "b.json"]
+
+    def test_export_predictions_to_xanylabeling_rejects_mismatched_image_ids(self, monkeypatch):
+        from vision.yolo.labeling import export_predictions_to_xanylabeling
+
+        monkeypatch.setattr("vision.yolo.labeling._get_image_size", lambda _: (100, 50))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(ValueError):
+                export_predictions_to_xanylabeling(
+                    image_paths=[Path(tmpdir) / "a.jpg", Path(tmpdir) / "b.jpg"],
+                    predictions=pd.DataFrame(columns=["frame"]),
+                    output_dir=tmpdir,
+                    image_ids=["img-a"],
+                )
 
     def test_launch_xanylabeling_builds_expected_command(self, monkeypatch):
         from vision.yolo.labeling import launch_xanylabeling

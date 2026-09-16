@@ -21,7 +21,7 @@ def read(
     name_to_id: dict[str, int] = {name: idx for idx, name in enumerate(class_names or [])}
 
     for json_path in sorted(source_dir.glob("*.json")):
-        with open(json_path) as fh:
+        with open(json_path, encoding="utf-8") as fh:
             data = json.load(fh)
 
         image_path = _resolve_image_path(json_path, data.get("imagePath"), image_dir=image_dir)
@@ -102,7 +102,7 @@ def write(
             "checked": False,
         }
         stem = Path(sample.image_path).stem
-        with open(target_dir / f"{stem}.json", "w") as fh:
+        with open(target_dir / f"{stem}.json", "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2)
 
 
