@@ -322,6 +322,19 @@ class TestLabeling:
                     image_ids=["img-a"],
                 )
 
+    def test_export_predictions_to_xanylabeling_requires_index_column(self, monkeypatch):
+        from vision.yolo.labeling import export_predictions_to_xanylabeling
+
+        monkeypatch.setattr("vision.yolo.labeling._get_image_size", lambda _: (100, 50))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(ValueError):
+                export_predictions_to_xanylabeling(
+                    image_paths=[Path(tmpdir) / "a.jpg"],
+                    predictions=pd.DataFrame(columns=["image_id"]),
+                    output_dir=tmpdir,
+                )
+
     def test_launch_xanylabeling_builds_expected_command(self, monkeypatch):
         from vision.yolo.labeling import launch_xanylabeling
 
@@ -414,7 +427,14 @@ class TestAnnotationConversion:
                                 class_id=0,
                                 class_name="person",
                                 bbox=[10.0, 20.0, 30.0, 40.0],
-                            )
+                            ),
+                            Annotation(
+                                task="segment",
+                                class_id=1,
+                                class_name="car",
+                                bbox=[1.0, 1.0, 5.0, 5.0],
+                                polygon=[[1.0, 1.0], [5.0, 1.0], [5.0, 5.0]],
+                            ),
                         ],
                     )
                 ],
@@ -427,6 +447,8 @@ class TestAnnotationConversion:
             assert samples[0].image_path == str(image_path.resolve())
             assert samples[0].annotations[0].class_name == "person"
             assert samples[0].annotations[0].bbox == [10.0, 20.0, 30.0, 40.0]
+            assert samples[0].annotations[1].class_name == "car"
+            assert samples[0].annotations[1].polygon == [[1.0, 1.0], [5.0, 1.0], [5.0, 5.0]]
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Sequence as SequenceABC
 from pathlib import Path
 from typing import Sequence
 
@@ -182,7 +183,14 @@ def _dataframe_to_shapes(predictions: pd.DataFrame) -> list[dict]:
 
 
 def _has_polygon(value) -> bool:
-    return isinstance(value, list) and len(value) >= 3
+    if isinstance(value, (str, bytes)) or not isinstance(value, SequenceABC):
+        return False
+    if len(value) < 3:
+        return False
+    return all(
+        isinstance(point, SequenceABC) and not isinstance(point, (str, bytes))
+        for point in value
+    )
 
 
 def _get_image_size(image_path: Path) -> tuple[int, int]:
