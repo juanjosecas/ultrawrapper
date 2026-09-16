@@ -101,4 +101,4 @@ def _normalize_format(fmt: str) -> str:
         "voc": "voc",
         "roboflow": "roboflow",
     }
-    return aliases.get(normalized, fmt.lower())
+    return aliases.get(normalized, normalized)

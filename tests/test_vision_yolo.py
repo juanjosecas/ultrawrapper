@@ -270,6 +270,12 @@ class TestLabeling:
             )
 
             assert [path.name for path in exported] == ["a.json", "b.json"]
+            with open(exported[0], encoding="utf-8") as fh:
+                first_payload = json.load(fh)
+            with open(exported[1], encoding="utf-8") as fh:
+                second_payload = json.load(fh)
+            assert first_payload["shapes"][0]["label"] == "person"
+            assert second_payload["shapes"][0]["label"] == "car"
 
     def test_export_predictions_to_xanylabeling_accepts_explicit_image_ids(self, monkeypatch):
         from vision.yolo.labeling import export_predictions_to_xanylabeling
@@ -307,6 +313,12 @@ class TestLabeling:
             )
 
             assert [path.name for path in exported] == ["a.json", "b.json"]
+            with open(exported[0], encoding="utf-8") as fh:
+                first_payload = json.load(fh)
+            with open(exported[1], encoding="utf-8") as fh:
+                second_payload = json.load(fh)
+            assert first_payload["shapes"][0]["label"] == "person"
+            assert second_payload["shapes"][0]["label"] == "car"
 
     def test_export_predictions_to_xanylabeling_rejects_mismatched_image_ids(self, monkeypatch):
         from vision.yolo.labeling import export_predictions_to_xanylabeling
