@@ -161,7 +161,7 @@ def _dataframe_to_shapes(predictions: pd.DataFrame) -> list[dict]:
             continue
 
         bbox = [row.get("xmin"), row.get("ymin"), row.get("xmax"), row.get("ymax")]
-        if any(value is None for value in bbox):
+        if any(value is None or pd.isna(value) for value in bbox):
             continue
 
         shapes.append(

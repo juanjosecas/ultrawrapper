@@ -330,6 +330,13 @@ class TestAnnotationConversion:
         assert "labelme" in _WRITERS
         assert "xanylabeling" in _WRITERS
 
+    def test_normalize_format_accepts_xanylabeling_aliases(self):
+        from vision.yolo.annotations.convert import _normalize_format
+
+        assert _normalize_format("x-anylabeling") == "xanylabeling"
+        assert _normalize_format("x_anylabeling") == "xanylabeling"
+        assert _normalize_format("xlabel") == "xanylabeling"
+
 
 # ---------------------------------------------------------------------------
 # infer.py

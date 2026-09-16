@@ -137,11 +137,14 @@ def _annotation_to_shape(ann: Annotation) -> dict | None:
 
 def _resolve_image_path(json_path: Path, declared_image_path: str | None) -> str:
     if declared_image_path:
-        return str(declared_image_path)
+        declared_path = Path(declared_image_path)
+        if declared_path.is_absolute():
+            return str(declared_path)
+        return str((json_path.parent / declared_path).resolve())
 
     for suffix in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"):
         candidate = json_path.with_suffix(suffix)
         if candidate.exists():
-            return candidate.name
+            return str(candidate.resolve())
 
-    return f"{json_path.stem}.jpg"
+    return str(json_path.with_suffix(".jpg").resolve())
