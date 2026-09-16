@@ -19,15 +19,15 @@ Para desarrollo local:
 pip install -e .
 ```
 
-Para usar `X-AnyLabeling` como interfaz de anotacion opcional:
+Para usar `X-AnyLabeling` como interfaz de anotación opcional:
 
 ```bash
 pip install -e ".[labeling]"
 ```
 
-Eso instala `x-anylabeling-cvhub[cpu]` como dependencia opcional. Si queres una
-instalacion GPU o manejar su entorno por separado, instalalo manualmente segun la
-documentacion oficial de X-AnyLabeling.
+Eso instala `x-anylabeling-cvhub[cpu]` como dependencia opcional. Si querés una
+instalación GPU o manejar su entorno por separado, instalalo manualmente según la
+documentación oficial de X-AnyLabeling.
 
 ## Uso rapido
 
@@ -160,11 +160,11 @@ Los notebooks guardan salidas de ejemplo en `vision/yolo/notebooks/outputs/`.
 ## Labeling con X-AnyLabeling
 
 `ultrawrapper` no incorpora el codebase de X-AnyLabeling; lo usa como una
-interfaz opcional de labeling instalada via `pip`. Esto evita acoplar el repo a
+interfaz opcional de labeling instalada vía `pip`. Esto evita acoplar el repo a
 una GUI externa y mantiene a `ultrawrapper` como capa de conveniencia sobre
 Ultralytics.
 
-Segun la documentacion oficial de X-AnyLabeling, la integracion natural es:
+Según la documentación oficial de X-AnyLabeling, la integración natural es:
 
 - abrir una carpeta de imagenes o una imagen puntual desde `xanylabeling`;
 - importar/exportar anotaciones en YOLO, VOC y COCO;
@@ -211,7 +211,7 @@ convert_annotations(
 )
 ```
 
-Tambien podes convertir datasets ya existentes hacia un formato que X-AnyLabeling
+También podés convertir datasets ya existentes hacia un formato que X-AnyLabeling
 entiende:
 
 ```python
@@ -225,16 +225,16 @@ convert_annotations(
 )
 ```
 
-Notas practicas:
+Notas prácticas:
 
-- El helper de exportacion a X-AnyLabeling cubre bien deteccion y segmentacion
+- El helper de exportación a X-AnyLabeling cubre bien detección y segmentación
   porque salen naturalmente del `DataFrame` actual.
 - X-AnyLabeling si soporta flujos de auto-labeling y carga de anotaciones ya
   hechas, asi que no hace falta modificar Ultralytics ni clonar su repo para
   aprovecharlo.
 - Para pose/formatos avanzados conviene seguir usando la conversion nativa de
   X-AnyLabeling si necesitás conservar todos sus metadatos de grouping.
-- X-AnyLabeling esta licenciado bajo GPL-3.0; por eso la integracion aca queda
+- X-AnyLabeling está licenciado bajo GPL-3.0; por eso la integración acá queda
   como dependencia opcional y no como codigo embebido en este repo MIT.
 
 ## Tests

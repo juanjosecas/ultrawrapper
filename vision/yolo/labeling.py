@@ -100,18 +100,24 @@ def export_predictions_to_xanylabeling(
     predictions: pd.DataFrame,
     output_dir: str | Path,
     index_column: str = "frame",
+    image_ids: Sequence[str | int] | None = None,
 ) -> list[Path]:
     """Export batched detection/segmentation predictions to X-AnyLabeling JSON."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    image_paths = list(image_paths)
+
+    if index_column not in predictions.columns:
+        raise ValueError(f"Predictions DataFrame must include the {index_column!r} column.")
+
+    if image_ids is None:
+        image_ids = list(range(len(image_paths)))
+    elif len(image_ids) != len(image_paths):
+        raise ValueError("image_ids and image_paths must have the same length.")
 
     exported: list[Path] = []
-    for index, image_path in enumerate(image_paths):
-        image_predictions = (
-            predictions[predictions[index_column] == index]
-            if index_column in predictions.columns
-            else predictions.iloc[0:0]
-        )
+    for image_id, image_path in zip(image_ids, image_paths):
+        image_predictions = predictions[predictions[index_column] == image_id]
         exported.append(
             export_image_predictions_to_xanylabeling(
                 image_path=image_path,

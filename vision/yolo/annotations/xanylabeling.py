@@ -22,7 +22,7 @@ def read(
         with open(json_path) as fh:
             data = json.load(fh)
 
-        image_path = data.get("imagePath", json_path.stem)
+        image_path = _resolve_image_path(json_path, data.get("imagePath"))
         width = int(data.get("imageWidth", 0) or 0)
         height = int(data.get("imageHeight", 0) or 0)
 
@@ -133,3 +133,15 @@ def _annotation_to_shape(ann: Annotation) -> dict | None:
         }
 
     return None
+
+
+def _resolve_image_path(json_path: Path, declared_image_path: str | None) -> str:
+    if declared_image_path:
+        return str(declared_image_path)
+
+    for suffix in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"):
+        candidate = json_path.with_suffix(suffix)
+        if candidate.exists():
+            return candidate.name
+
+    return f"{json_path.stem}.jpg"
