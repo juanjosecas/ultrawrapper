@@ -402,6 +402,7 @@ class TestAnnotationConversion:
         assert _normalize_format("xlabel") == "xanylabeling"
 
     def test_xanylabeling_roundtrip_with_separate_image_dir(self):
+        from vision.yolo.annotations.convert import convert_annotations
         from vision.yolo.annotations.internal import Annotation, AnnotationSample
         from vision.yolo.annotations.xanylabeling import read, write
 
@@ -449,6 +450,16 @@ class TestAnnotationConversion:
             assert samples[0].annotations[0].bbox == [10.0, 20.0, 30.0, 40.0]
             assert samples[0].annotations[1].class_name == "car"
             assert samples[0].annotations[1].polygon == [[1.0, 1.0], [5.0, 1.0], [5.0, 5.0]]
+
+            converted_dir = root / "labelme"
+            convert_annotations(
+                source_dir=labels_dir,
+                target_dir=converted_dir,
+                source_fmt="x_anylabeling",
+                target_fmt="label-me",
+                image_dir=images_dir,
+            )
+            assert (converted_dir / "sample.json").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -55,6 +55,7 @@ def read(
                     task="segment" if polygon else "detect",
                     class_id=cls_id,
                     class_name=cls_name,
+                    score=shape.get("score"),
                     bbox=bbox,
                     polygon=polygon,
                 )
@@ -110,7 +111,7 @@ def _annotation_to_shape(ann: Annotation) -> dict | None:
     if ann.polygon:
         return {
             "label": ann.class_name,
-            "score": None,
+            "score": ann.score,
             "points": ann.polygon,
             "group_id": None,
             "description": "",
@@ -124,7 +125,7 @@ def _annotation_to_shape(ann: Annotation) -> dict | None:
         x1, y1, x2, y2 = ann.bbox
         return {
             "label": ann.class_name,
-            "score": None,
+            "score": ann.score,
             "points": [[x1, y1], [x2, y2]],
             "group_id": None,
             "description": "",

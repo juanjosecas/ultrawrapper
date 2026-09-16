@@ -52,6 +52,7 @@ def read(
                     task=task,
                     class_id=cls_id,
                     class_name=cls_name,
+                    score=shape.get("score"),
                     bbox=bbox,
                     polygon=polygon,
                 )
@@ -83,6 +84,7 @@ def write(
             if ann.polygon:
                 shape = {
                     "label": ann.class_name,
+                    "score": ann.score,
                     "points": ann.polygon,
                     "shape_type": "polygon",
                     "flags": {},
@@ -91,6 +93,7 @@ def write(
                 x1, y1, x2, y2 = ann.bbox
                 shape = {
                     "label": ann.class_name,
+                    "score": ann.score,
                     "points": [[x1, y1], [x2, y2]],
                     "shape_type": "rectangle",
                     "flags": {},

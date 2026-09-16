@@ -34,6 +34,7 @@ class Annotation:
     task: str = "detect"           # "detect" | "segment" | "pose"
     class_id: int = 0
     class_name: str = ""
+    score: Optional[float] = None
     bbox: list[float] = field(default_factory=list)      # [x1, y1, x2, y2] absolute px
     polygon: list[list[float]] = field(default_factory=list)   # [[x, y], ...]
     keypoints: list[list[float]] = field(default_factory=list) # [[x, y, visibility], ...]
@@ -56,6 +57,7 @@ class AnnotationSample:
                     "task": a.task,
                     "class_id": a.class_id,
                     "class_name": a.class_name,
+                    "score": a.score,
                     "bbox": a.bbox,
                     "polygon": a.polygon,
                     "keypoints": a.keypoints,
@@ -71,6 +73,7 @@ class AnnotationSample:
                 task=a.get("task", "detect"),
                 class_id=a.get("class_id", 0),
                 class_name=a.get("class_name", ""),
+                score=a.get("score"),
                 bbox=a.get("bbox", []),
                 polygon=a.get("polygon", []),
                 keypoints=a.get("keypoints", []),
