@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -192,6 +193,331 @@ class TestDataframe:
         df2 = pd.DataFrame({"frame": [1], "confidence": [0.8]})
         merged = concat_results([df1, df2])
         assert len(merged) == 2
+
+
+# ---------------------------------------------------------------------------
+# labeling.py
+# ---------------------------------------------------------------------------
+
+class TestLabeling:
+    def test_export_image_predictions_to_xanylabeling(self, monkeypatch):
+        from vision.yolo.labeling import export_image_predictions_to_xanylabeling
+
+        predictions = pd.DataFrame(
+            [
+                {
+                    "class_id": 0,
+                    "class_name": "person",
+                    "confidence": 0.9,
+                    "xmin": 10.0,
+                    "ymin": 20.0,
+                    "xmax": 30.0,
+                    "ymax": 40.0,
+                    "polygon": None,
+                },
+                {
+                    "class_id": 1,
+                    "class_name": "car",
+                    "confidence": 0.8,
+                    "xmin": 0.0,
+                    "ymin": 0.0,
+                    "xmax": 0.0,
+                    "ymax": 0.0,
+                    "polygon": [[1.0, 1.0], [5.0, 1.0], [5.0, 5.0]],
+                },
+            ]
+        )
+
+        monkeypatch.setattr("vision.yolo.labeling._get_image_size", lambda _: (640, 480))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = export_image_predictions_to_xanylabeling(
+                image_path=Path(tmpdir) / "image.jpg",
+                predictions=predictions,
+                output_dir=tmpdir,
+                checked=True,
+                tags=["seed"],
+            )
+
+            with open(output_path, encoding="utf-8") as fh:
+                payload = json.load(fh)
+            assert output_path.name == "image.json"
+            assert payload["imageWidth"] == 640
+            assert payload["imageHeight"] == 480
+            assert payload["checked"] is True
+            assert payload["tags"] == ["seed"]
+            assert len(payload["shapes"]) == 2
+            assert payload["shapes"][0]["shape_type"] == "rectangle"
+            assert payload["shapes"][1]["shape_type"] == "polygon"
+
+    def test_export_predictions_to_xanylabeling_uses_frame_column(self, monkeypatch):
+        from vision.yolo.labeling import export_predictions_to_xanylabeling
+
+        predictions = pd.DataFrame(
+            [
+                {"frame": 0, "class_name": "person", "xmin": 1, "ymin": 2, "xmax": 3, "ymax": 4},
+                {"frame": 1, "class_name": "car", "xmin": 5, "ymin": 6, "xmax": 7, "ymax": 8},
+            ]
+        )
+
+        monkeypatch.setattr("vision.yolo.labeling._get_image_size", lambda _: (100, 50))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exported = export_predictions_to_xanylabeling(
+                image_paths=[Path(tmpdir) / "a.jpg", Path(tmpdir) / "b.jpg"],
+                predictions=predictions,
+                output_dir=tmpdir,
+            )
+
+            assert [path.name for path in exported] == ["a.json", "b.json"]
+            with open(exported[0], encoding="utf-8") as fh:
+                first_payload = json.load(fh)
+            with open(exported[1], encoding="utf-8") as fh:
+                second_payload = json.load(fh)
+            assert first_payload["shapes"][0]["label"] == "person"
+            assert second_payload["shapes"][0]["label"] == "car"
+
+    def test_export_predictions_to_xanylabeling_accepts_explicit_image_ids(self, monkeypatch):
+        from vision.yolo.labeling import export_predictions_to_xanylabeling
+
+        predictions = pd.DataFrame(
+            [
+                {
+                    "image_id": "img-b",
+                    "class_name": "car",
+                    "xmin": 5,
+                    "ymin": 6,
+                    "xmax": 7,
+                    "ymax": 8,
+                },
+                {
+                    "image_id": "img-a",
+                    "class_name": "person",
+                    "xmin": 1,
+                    "ymin": 2,
+                    "xmax": 3,
+                    "ymax": 4,
+                },
+            ]
+        )
+
+        monkeypatch.setattr("vision.yolo.labeling._get_image_size", lambda _: (100, 50))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exported = export_predictions_to_xanylabeling(
+                image_paths=[Path(tmpdir) / "a.jpg", Path(tmpdir) / "b.jpg"],
+                predictions=predictions,
+                output_dir=tmpdir,
+                index_column="image_id",
+                image_ids=["img-a", "img-b"],
+            )
+
+            assert [path.name for path in exported] == ["a.json", "b.json"]
+            with open(exported[0], encoding="utf-8") as fh:
+                first_payload = json.load(fh)
+            with open(exported[1], encoding="utf-8") as fh:
+                second_payload = json.load(fh)
+            assert first_payload["shapes"][0]["label"] == "person"
+            assert second_payload["shapes"][0]["label"] == "car"
+
+    def test_export_predictions_to_xanylabeling_rejects_mismatched_image_ids(self, monkeypatch):
+        from vision.yolo.labeling import export_predictions_to_xanylabeling
+
+        monkeypatch.setattr("vision.yolo.labeling._get_image_size", lambda _: (100, 50))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(ValueError):
+                export_predictions_to_xanylabeling(
+                    image_paths=[Path(tmpdir) / "a.jpg", Path(tmpdir) / "b.jpg"],
+                    predictions=pd.DataFrame(columns=["frame"]),
+                    output_dir=tmpdir,
+                    image_ids=["img-a"],
+                )
+
+    def test_export_predictions_to_xanylabeling_requires_index_column(self, monkeypatch):
+        from vision.yolo.labeling import export_predictions_to_xanylabeling
+
+        monkeypatch.setattr("vision.yolo.labeling._get_image_size", lambda _: (100, 50))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(ValueError):
+                export_predictions_to_xanylabeling(
+                    image_paths=[Path(tmpdir) / "a.jpg"],
+                    predictions=pd.DataFrame(columns=["image_id"]),
+                    output_dir=tmpdir,
+                )
+
+    def test_launch_xanylabeling_builds_expected_command(self, monkeypatch):
+        from vision.yolo.labeling import launch_xanylabeling
+
+        commands = []
+
+        class FakePopen:
+            def __init__(self, command):
+                commands.append(command)
+
+        monkeypatch.setattr("vision.yolo.labeling.shutil.which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr("vision.yolo.labeling.subprocess.Popen", FakePopen)
+
+        launch_xanylabeling(
+            filename="/data/images",
+            output_dir="/data/labels",
+            labels=["person", "car"],
+            autosave=True,
+            store_image_data=False,
+            sort_labels=False,
+            keep_prev=True,
+            extra_args=["--logger-level", "info"],
+        )
+
+        assert commands == [[
+            "/usr/bin/xanylabeling",
+            "--filename",
+            "/data/images",
+            "--output",
+            "/data/labels",
+            "--labels",
+            "person,car",
+            "--autosave",
+            "--nodata",
+            "--nosortlabels",
+            "--keep-prev",
+            "--logger-level",
+            "info",
+        ]]
+
+    def test_launch_xanylabeling_requires_installation(self, monkeypatch):
+        from vision.yolo.labeling import launch_xanylabeling
+
+        monkeypatch.setattr("vision.yolo.labeling.shutil.which", lambda name: None)
+
+        with pytest.raises(FileNotFoundError):
+            launch_xanylabeling(filename="/data/images")
+
+
+# ---------------------------------------------------------------------------
+# annotations/convert.py
+# ---------------------------------------------------------------------------
+
+class TestAnnotationConversion:
+    def test_convert_annotations_supports_xanylabeling_and_labelme_targets(self):
+        from vision.yolo.annotations.convert import _WRITERS
+
+        assert "labelme" in _WRITERS
+        assert "xanylabeling" in _WRITERS
+
+    def test_normalize_format_accepts_xanylabeling_aliases(self):
+        from vision.yolo.annotations.convert import _normalize_format
+
+        assert _normalize_format("x-anylabeling") == "xanylabeling"
+        assert _normalize_format("x_anylabeling") == "xanylabeling"
+        assert _normalize_format("xlabel") == "xanylabeling"
+
+    def test_xanylabeling_roundtrip_with_separate_image_dir(self):
+        from vision.yolo.annotations.convert import convert_annotations
+        from vision.yolo.annotations.internal import Annotation, AnnotationSample
+        from vision.yolo.annotations.xanylabeling import read, write
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            images_dir = root / "images"
+            labels_dir = root / "labels_xany"
+            images_dir.mkdir()
+            labels_dir.mkdir()
+
+            image_path = images_dir / "sample.jpg"
+            image_path.write_bytes(b"fake-image")
+
+            write(
+                [
+                    AnnotationSample(
+                        image_path=str(image_path),
+                        width=640,
+                        height=480,
+                        annotations=[
+                            Annotation(
+                                task="detect",
+                                class_id=0,
+                                class_name="person",
+                                bbox=[10.0, 20.0, 30.0, 40.0],
+                            ),
+                            Annotation(
+                                task="segment",
+                                class_id=1,
+                                class_name="car",
+                                bbox=[1.0, 1.0, 5.0, 5.0],
+                                polygon=[[1.0, 1.0], [5.0, 1.0], [5.0, 5.0]],
+                            ),
+                        ],
+                    )
+                ],
+                labels_dir,
+            )
+
+            samples = read(labels_dir, image_dir=images_dir)
+
+            assert len(samples) == 1
+            assert samples[0].image_path == str(image_path.resolve())
+            assert samples[0].annotations[0].class_name == "person"
+            assert samples[0].annotations[0].bbox == [10.0, 20.0, 30.0, 40.0]
+            assert samples[0].annotations[1].class_name == "car"
+            assert samples[0].annotations[1].polygon == [[1.0, 1.0], [5.0, 1.0], [5.0, 5.0]]
+
+            converted_dir = root / "labelme"
+            convert_annotations(
+                source_dir=labels_dir,
+                target_dir=converted_dir,
+                source_fmt="x_anylabeling",
+                target_fmt="label-me",
+                image_dir=images_dir,
+            )
+            assert (converted_dir / "sample.json").exists()
+
+    def test_xanylabeling_read_relocates_stale_absolute_image_path(self):
+        from vision.yolo.annotations.xanylabeling import read
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            images_dir = root / "images"
+            labels_dir = root / "labels_xany"
+            images_dir.mkdir()
+            labels_dir.mkdir()
+
+            relocated_image = images_dir / "moved.jpg"
+            relocated_image.write_bytes(b"fake-image")
+            stale_absolute_path = root / "old_location" / "moved.jpg"
+
+            payload = {
+                "version": "x-anylabeling",
+                "flags": {},
+                "tags": [],
+                "shapes": [
+                    {
+                        "label": "person",
+                        "score": 0.9,
+                        "points": [[10.0, 20.0], [30.0, 40.0]],
+                        "group_id": None,
+                        "description": "",
+                        "difficult": False,
+                        "shape_type": "rectangle",
+                        "flags": {},
+                        "attributes": {},
+                    }
+                ],
+                "description": "",
+                "imagePath": str(stale_absolute_path),
+                "imageData": None,
+                "imageHeight": 480,
+                "imageWidth": 640,
+                "checked": False,
+            }
+            with open(labels_dir / "moved.json", "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2)
+
+            samples = read(labels_dir, image_dir=images_dir)
+
+            assert len(samples) == 1
+            assert samples[0].image_path == str(relocated_image.resolve())
 
 
 # ---------------------------------------------------------------------------

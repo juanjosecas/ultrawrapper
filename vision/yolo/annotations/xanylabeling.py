@@ -1,0 +1,175 @@
+"""X-AnyLabeling JSON annotation reader and writer."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Optional
+
+from vision.yolo.annotations.internal import Annotation, AnnotationSample
+
+
+def read(
+    source_dir: Path,
+    class_names: Optional[list[str]] = None,
+    image_dir: Optional[Path] = None,
+    **kwargs,
+) -> list[AnnotationSample]:
+    """Read X-AnyLabeling JSON annotation files from *source_dir*."""
+    del kwargs
+    samples: list[AnnotationSample] = []
+    name_to_id: dict[str, int] = {name: idx for idx, name in enumerate(class_names or [])}
+
+    for json_path in sorted(source_dir.glob("*.json")):
+        with open(json_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+
+        image_path = _resolve_image_path(json_path, data.get("imagePath"), image_dir=image_dir)
+        width = int(data.get("imageWidth", 0) or 0)
+        height = int(data.get("imageHeight", 0) or 0)
+
+        annotations: list[Annotation] = []
+        for shape in data.get("shapes", []):
+            cls_name = str(shape.get("label", ""))
+            cls_id = name_to_id.setdefault(cls_name, len(name_to_id))
+            shape_type = shape.get("shape_type", "polygon")
+            points = shape.get("points", [])
+
+            bbox: list[float] = []
+            polygon: list[list[float]] = []
+
+            if shape_type == "rectangle" and len(points) == 2:
+                x1, y1 = float(points[0][0]), float(points[0][1])
+                x2, y2 = float(points[1][0]), float(points[1][1])
+                bbox = [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
+            elif shape_type == "polygon" and points:
+                xs = [float(point[0]) for point in points]
+                ys = [float(point[1]) for point in points]
+                bbox = [min(xs), min(ys), max(xs), max(ys)]
+                polygon = [[x, y] for x, y in zip(xs, ys)]
+            else:
+                continue
+
+            annotations.append(
+                Annotation(
+                    task="segment" if polygon else "detect",
+                    class_id=cls_id,
+                    class_name=cls_name,
+                    score=shape.get("score"),
+                    bbox=bbox,
+                    polygon=polygon,
+                )
+            )
+
+        samples.append(
+            AnnotationSample(
+                image_path=image_path,
+                width=width,
+                height=height,
+                annotations=annotations,
+            )
+        )
+
+    return samples
+
+
+def write(
+    samples: list[AnnotationSample],
+    target_dir: Path,
+    class_names: Optional[list[str]] = None,
+    **kwargs,
+) -> None:
+    """Write X-AnyLabeling-compatible JSON annotation files to *target_dir*."""
+    del class_names
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for sample in samples:
+        shapes = []
+        for ann in sample.annotations:
+            shape = _annotation_to_shape(ann)
+            if shape is not None:
+                shapes.append(shape)
+
+        payload = {
+            "version": "x-anylabeling",
+            "flags": {},
+            "tags": [],
+            "shapes": shapes,
+            "description": "",
+            "imagePath": Path(sample.image_path).name,
+            "imageData": None,
+            "imageHeight": sample.height,
+            "imageWidth": sample.width,
+            "checked": False,
+        }
+        stem = Path(sample.image_path).stem
+        with open(target_dir / f"{stem}.json", "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+
+
+def _annotation_to_shape(ann: Annotation) -> dict | None:
+    if ann.polygon:
+        return {
+            "label": ann.class_name,
+            "score": ann.score,
+            "points": ann.polygon,
+            "group_id": None,
+            "description": "",
+            "difficult": False,
+            "shape_type": "polygon",
+            "flags": {},
+            "attributes": {},
+        }
+
+    if len(ann.bbox) == 4:
+        x1, y1, x2, y2 = ann.bbox
+        return {
+            "label": ann.class_name,
+            "score": ann.score,
+            "points": [[x1, y1], [x2, y2]],
+            "group_id": None,
+            "description": "",
+            "difficult": False,
+            "shape_type": "rectangle",
+            "flags": {},
+            "attributes": {},
+        }
+
+    return None
+
+
+def _resolve_image_path(
+    json_path: Path,
+    declared_image_path: str | None,
+    image_dir: Optional[Path] = None,
+) -> str:
+    if declared_image_path:
+        declared_path = Path(declared_image_path)
+        if declared_path.is_absolute() and declared_path.exists():
+            return str(declared_path)
+
+        lookup_path = Path(declared_path.name) if declared_path.is_absolute() else declared_path
+
+        search_roots = (
+            [image_dir, json_path.parent]
+            if image_dir is not None
+            else [json_path.parent]
+        )
+        for root in search_roots:
+            candidate = (root / lookup_path).resolve()
+            if candidate.exists():
+                return str(candidate)
+        return str((search_roots[0] / lookup_path).resolve())
+
+    for suffix in (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"):
+        candidates = []
+        if image_dir is not None:
+            candidates.append((image_dir / f"{json_path.stem}{suffix}").resolve())
+        candidates.append(json_path.with_suffix(suffix).resolve())
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+
+    if image_dir is not None:
+        return str((image_dir / f"{json_path.stem}.jpg").resolve())
+    return str(json_path.with_suffix(".jpg").resolve())

@@ -19,6 +19,16 @@ Para desarrollo local:
 pip install -e .
 ```
 
+To use `X-AnyLabeling` as an optional labeling UI:
+
+```bash
+pip install -e ".[labeling]"
+```
+
+This installs `x-anylabeling-cvhub[cpu]` as an optional dependency. If you need
+GPU support or want to manage its environment separately, install it manually
+following the official X-AnyLabeling documentation.
+
 ## Uso rapido
 
 ```python
@@ -146,6 +156,86 @@ Los ejemplos estan en `vision/yolo/notebooks`:
 9. `09_video_processing.ipynb`: procesamiento de video por lotes.
 
 Los notebooks guardan salidas de ejemplo en `vision/yolo/notebooks/outputs/`.
+
+## Labeling with X-AnyLabeling
+
+`ultrawrapper` does not vendor the X-AnyLabeling codebase; it treats it as an
+optional UI installed via `pip`. That keeps this repository focused on being a
+thin convenience layer on top of Ultralytics instead of embedding an external
+desktop app.
+
+Based on the official X-AnyLabeling documentation, the natural integration path
+is:
+
+- open an image directory or a single image from `xanylabeling`;
+- import and export annotations in YOLO, VOC, and COCO;
+- load native X-AnyLabeling JSON files;
+- use built-in auto-labeling and batch auto-labeling inside the app;
+- export the reviewed result back into `ultrawrapper`.
+
+`ultrawrapper` now adds helpers for that round-trip:
+
+```python
+from pathlib import Path
+
+from vision.yolo.infer import predict_image
+from vision.yolo.annotations import convert_annotations
+from vision.yolo.labeling import (
+    export_image_predictions_to_xanylabeling,
+    launch_xanylabeling,
+)
+
+# 1) run inference with ultrawrapper
+df = predict_image("yolo11n.pt", "image.jpg", confidence=0.25)
+
+# 2) export predictions as editable pre-labels for X-AnyLabeling
+json_path = export_image_predictions_to_xanylabeling(
+    image_path="image.jpg",
+    predictions=df,
+    output_dir="prelabels",
+)
+
+# 3) open the UI against the image directory
+launch_xanylabeling(
+    filename="dataset/images",
+    output_dir="dataset/labels_xany",
+    labels=["person", "car"],
+)
+
+# 4) bring edited annotations back into the format you need
+convert_annotations(
+    source_dir="dataset/labels_xany",
+    target_dir="dataset/labels_yolo",
+    source_fmt="xanylabeling",
+    target_fmt="yolo",
+    class_names=["person", "car"],
+    image_dir=Path("dataset/images"),
+)
+```
+
+You can also convert an existing dataset into a format X-AnyLabeling can edit:
+
+```python
+convert_annotations(
+    source_dir="dataset/labels_yolo",
+    target_dir="dataset/labels_xany",
+    source_fmt="yolo",
+    target_fmt="xanylabeling",
+    class_names=["person", "car"],
+    image_dir=Path("dataset/images"),
+)
+```
+
+Practical notes:
+
+- The export helper covers detection and segmentation well because both map
+  cleanly from the current `DataFrame` schema.
+- X-AnyLabeling already supports auto-labeling and importing existing
+  annotations, so there is no need to modify Ultralytics or vendor its repo.
+- For pose or more advanced formats, prefer X-AnyLabeling's native conversion
+  tools when you need to preserve all grouping metadata.
+- X-AnyLabeling is licensed under GPL-3.0, so this repo keeps the integration
+  optional instead of embedding GPL code inside an MIT project.
 
 ## Tests
 

@@ -30,6 +30,7 @@ openvino = ["openvino>=2024.0"]
 polars = ["polars>=0.20"]
 zarr = ["zarr>=2.17"]
 plotly = ["plotly>=5.18"]
+labeling = ["x-anylabeling-cvhub[cpu]>=4.0.6"]
 all = [
     "onnxruntime>=1.17",
     "openvino>=2024.0",

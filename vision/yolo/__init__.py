@@ -3,6 +3,12 @@
 from vision.yolo.devices import detect_device, get_device_info
 from vision.yolo.export import export_model
 from vision.yolo.infer import predict_directory, predict_image, predict_images, predict_video
+from vision.yolo.labeling import (
+    export_image_predictions_to_xanylabeling,
+    export_predictions_to_xanylabeling,
+    is_xanylabeling_available,
+    launch_xanylabeling,
+)
 from vision.yolo.track import make_tracker_config, track_detections_dataframe, track_video
 from vision.yolo.train import resume_training, train_model, validate_model
 from vision.yolo.video import (
@@ -18,6 +24,10 @@ __all__ = [
     "predict_images",
     "predict_video",
     "predict_directory",
+    "is_xanylabeling_available",
+    "launch_xanylabeling",
+    "export_image_predictions_to_xanylabeling",
+    "export_predictions_to_xanylabeling",
     "track_video",
     "make_tracker_config",
     "track_detections_dataframe",
