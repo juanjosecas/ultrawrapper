@@ -7,27 +7,31 @@ Ultralytics.
 
 ## Instalacion
 
+Instalacion normal:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install .
 ```
 
-Para desarrollo local:
+Instalacion editable para desarrollo:
 
 ```bash
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-To use `X-AnyLabeling` as an optional labeling UI:
+Extras opcionales:
 
 ```bash
-pip install -e ".[labeling]"
+pip install -e ".[video]"      # Pillow para GIF
+pip install -e ".[ml]"         # scikit-learn
+pip install -e ".[explain]"    # SHAP para modelos tabulares
+pip install -e ".[labeling]"   # X-AnyLabeling
+pip install -e ".[all]"
 ```
 
-This installs `x-anylabeling-cvhub[cpu]` as an optional dependency. If you need
-GPU support or want to manage its environment separately, install it manually
-following the official X-AnyLabeling documentation.
+El I/O de video principal usa OpenCV y no ejecuta `ffmpeg` mediante `subprocess`.
 
 ## Uso rapido
 
@@ -46,23 +50,21 @@ plot_class_distribution(df, save_to="classes.png")
 ```
 
 Las funciones de `vision.yolo.plotting` muestran el grafico por defecto y guardan
-la imagen si se pasa `save_to`. No hace falta hacer `fig = ...` ni `fig.show()`.
-Para ejecuciones por lotes o tests se puede usar `show=False`.
+la imagen si se pasa `save_to`. Para ejecuciones por lotes o tests se puede usar
+`show=False`.
 
 ## Ploteo disponible
 
-- `plot_image_detections`: cajas, poligonos de segmentacion y keypoints en una sola imagen.
-- `plot_bounding_boxes`: solo cajas y labels.
+- `plot_image_detections`: cajas, poligonos de segmentacion y keypoints.
+- `plot_bounding_boxes`: cajas y labels.
 - `plot_segmentation_masks`: poligonos de segmentacion, con cajas opcionales.
 - `plot_pose_keypoints`: keypoints y skeleton COCO por defecto.
 - `plot_class_distribution`: distribucion de clases.
-- `plot_video_statistics`: resumen de detecciones por frame, confianza, clases y areas.
+- `plot_video_statistics`: detecciones por frame, confianza, clases y areas.
 - `plot_tracking_trajectories`: trayectorias de objetos trackeados.
 - `plot_training_metrics`, `plot_confusion_matrix`, `plot_precision_recall`, `plot_gpu_usage`.
 
 ## Video anotado
-
-Para cargar un video, superponer predicciones y escribir un MP4 anotado:
 
 ```python
 from vision.yolo.video import write_annotated_video
@@ -71,8 +73,8 @@ out_path, df = write_annotated_video(
     model_path="yolo11n.pt",
     video_path="input.mp4",
     output_path="annotated.mp4",
-    tracker="bytetrack.yaml",      # activa track_id y permite dibujar tails
-    color_by="confidence",         # tambien: "class" o "track_id"
+    tracker="bytetrack.yaml",
+    color_by="confidence",
     draw_tails=True,
     tail_length=30,
     save_predictions_to="predictions.parquet",
@@ -80,10 +82,7 @@ out_path, df = write_annotated_video(
 )
 ```
 
-Tambien se puede pasar un `predictions_df` ya calculado para dibujar sin volver a
-correr el modelo.
-
-Si ya corriste `predict_video` y tenes el `DataFrame`:
+Si ya existe el `DataFrame` de predicciones:
 
 ```python
 from vision.yolo.video import write_annotated_video_from_dataframe
@@ -105,21 +104,7 @@ annotated_path = write_annotated_video_from_dataframe(
 )
 ```
 
-Para acelerar el dibujo cuando no necesitás tails:
-
-```python
-annotated_path = write_annotated_video_from_dataframe(
-    video_path="input.mp4",
-    predictions=df,
-    output_path="annotated_parallel.mp4",
-    color_by="confidence",
-    draw_tails=False,
-    annotation_workers=4,
-    annotation_batch_size=32,
-)
-```
-
-Tambien podés pedir tracking directamente en `predict_video`:
+Tambien se puede pedir tracking directamente en `predict_video`:
 
 ```python
 from vision.yolo.infer import predict_video
@@ -141,21 +126,95 @@ tracked_df = predict_video(
 )
 ```
 
+## Video I/O sin ffmpeg CLI
+
+`vision.yolo.video_io` agrega utilidades simples basadas en OpenCV:
+
+```python
+from vision.yolo.video_io import extract_frames, images_to_video, video_info
+
+print(video_info("input.mp4"))
+
+frames = extract_frames(
+    "input.mp4",
+    output_dir="frames",
+    every=30,
+)
+
+images_to_video(frames, "rebuilt.mp4", fps=10)
+```
+
+Funciones disponibles: `read_frames`, `write_frames`, `video_info`, `extract_frames`,
+`images_to_video` e `images_to_gif`. Las secuencias de video se procesan de forma
+iterativa; no se carga el video completo en RAM.
+
+## Explainability
+
+Las herramientas de explainability se mantienen desacopladas de capas privadas de
+YOLO. `detection_density_map` resume espacialmente las detecciones y
+`occlusion_sensitivity` funciona con cualquier predictor que devuelva un
+`DataFrame` con una columna `confidence`.
+
+```python
+import cv2
+
+from vision.yolo.explain import detection_density_map, occlusion_sensitivity, overlay_heatmap
+from vision.yolo.infer import predict_image
+
+image = cv2.imread("image.jpg")
+df = predict_image("yolo11n.pt", image)
+
+density = detection_density_map(df, image.shape)
+overlay = overlay_heatmap(image, density)
+
+
+def predictor(frame):
+    return predict_image("yolo11n.pt", frame)
+
+sensitivity = occlusion_sensitivity(image, predictor, patch_size=96)
+```
+
+SHAP se reserva para modelos tabulares downstream mediante `vision.yolo.ml.shap_values`.
+
+## Machine learning desde inferencias
+
+```python
+import pandas as pd
+
+from vision.yolo.ml import frame_features, merge_labels, prepare_xy, track_features
+
+predictions = pd.read_parquet("predictions.parquet")
+features = frame_features(predictions)
+
+labels = pd.read_csv("frame_labels.csv")
+table = merge_labels(features, labels, on="frame")
+X, y = prepare_xy(table, target="label", drop=["frame"])
+```
+
+`track_features` agrega por objeto trackeado distancia recorrida, velocidad, numero
+de observaciones y confianza. `frame_features` produce una fila numerica por frame.
+
 ## Notebooks
 
-Los ejemplos estan en `vision/yolo/notebooks`:
+Los ejemplos estan en `notebooks/`:
 
-1. `01_detection.ipynb`: deteccion, batch, filtrado y guardado de plots.
-2. `02_segmentation.ipynb`: segmentacion, poligonos y filtros por confianza.
-3. `03_pose.ipynb`: pose, keypoints, skeleton y conversion a tabla larga.
-4. `04_tracking.ipynb`: tracking, estadisticas y trayectorias.
-5. `05_training.ipynb`: entrenamiento, validacion y metricas.
-6. `06_augmentations.ipynb`: Albumentations para imagenes/cajas.
+1. `01_detection.ipynb`: deteccion basica y salida tabular.
+2. `02_segmentation.ipynb`: segmentacion y poligonos.
+3. `03_pose.ipynb`: pose y keypoints.
+4. `04_tracking.ipynb`: tracking y trayectorias.
+5. `05_training.ipynb`: entrenamiento y validacion.
+6. `06_augmentations.ipynb`: Albumentations.
 7. `07_export.ipynb`: exportacion y benchmarks.
-8. `08_annotation_conversion.ipynb`: conversion COCO/YOLO/VOC/LabelMe.
-9. `09_video_processing.ipynb`: procesamiento de video por lotes.
+8. `08_annotation_conversion.ipynb`: conversion de anotaciones.
+9. `09_video_processing.ipynb`: procesamiento de video.
+10. `10_dataframe_analysis.ipynb`: analisis directo del `DataFrame`.
+11. `11_confidence_thresholds.ipynb`: efecto del threshold de confianza.
+12. `12_tracking_kinematics.ipynb`: distancia y velocidad por track.
+13. `13_explainability.ipynb`: density maps y occlusion sensitivity.
+14. `14_ml_from_inferences.ipynb`: features y modelo tabular sencillo.
+15. `15_video_io.ipynb`: extraccion de frames, video y GIF sin ffmpeg CLI.
 
-Los notebooks guardan salidas de ejemplo en `vision/yolo/notebooks/outputs/`.
+Los notebooks nuevos usan codigo lineal, rutas como strings y no incluyen outputs grandes embebidos.
 
 ## Labeling with X-AnyLabeling
 
@@ -164,16 +223,7 @@ optional UI installed via `pip`. That keeps this repository focused on being a
 thin convenience layer on top of Ultralytics instead of embedding an external
 desktop app.
 
-Based on the official X-AnyLabeling documentation, the natural integration path
-is:
-
-- open an image directory or a single image from `xanylabeling`;
-- import and export annotations in YOLO, VOC, and COCO;
-- load native X-AnyLabeling JSON files;
-- use built-in auto-labeling and batch auto-labeling inside the app;
-- export the reviewed result back into `ultrawrapper`.
-
-`ultrawrapper` now adds helpers for that round-trip:
+The intended round-trip is:
 
 ```python
 from pathlib import Path
@@ -185,24 +235,20 @@ from vision.yolo.labeling import (
     launch_xanylabeling,
 )
 
-# 1) run inference with ultrawrapper
 df = predict_image("yolo11n.pt", "image.jpg", confidence=0.25)
 
-# 2) export predictions as editable pre-labels for X-AnyLabeling
 json_path = export_image_predictions_to_xanylabeling(
     image_path="image.jpg",
     predictions=df,
     output_dir="prelabels",
 )
 
-# 3) open the UI against the image directory
 launch_xanylabeling(
     filename="dataset/images",
     output_dir="dataset/labels_xany",
     labels=["person", "car"],
 )
 
-# 4) bring edited annotations back into the format you need
 convert_annotations(
     source_dir="dataset/labels_xany",
     target_dir="dataset/labels_yolo",
@@ -213,34 +259,18 @@ convert_annotations(
 )
 ```
 
-You can also convert an existing dataset into a format X-AnyLabeling can edit:
-
-```python
-convert_annotations(
-    source_dir="dataset/labels_yolo",
-    target_dir="dataset/labels_xany",
-    source_fmt="yolo",
-    target_fmt="xanylabeling",
-    class_names=["person", "car"],
-    image_dir=Path("dataset/images"),
-)
-```
-
-Practical notes:
-
-- The export helper covers detection and segmentation well because both map
-  cleanly from the current `DataFrame` schema.
-- X-AnyLabeling already supports auto-labeling and importing existing
-  annotations, so there is no need to modify Ultralytics or vendor its repo.
-- For pose or more advanced formats, prefer X-AnyLabeling's native conversion
-  tools when you need to preserve all grouping metadata.
-- X-AnyLabeling is licensed under GPL-3.0, so this repo keeps the integration
-  optional instead of embedding GPL code inside an MIT project.
+La integracion sigue siendo opcional para no incorporar el codigo GPL de X-AnyLabeling
+dentro del proyecto MIT.
 
 ## Tests
 
 ```bash
-python -m pytest tests/test_vision_yolo.py -q
+python -m pytest -q
+ruff check vision tests
 ```
 
-Si el entorno no tiene `pytest`, instala las dependencias de desarrollo antes de correrlos.
+Para instalar el entorno de desarrollo:
+
+```bash
+pip install -e ".[dev]"
+```
