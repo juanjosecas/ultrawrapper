@@ -3,6 +3,17 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# archivos innecesarios
+*.mp4
+*.avi
+*.mp*
+*.m4a
+*.m4v
+*.pt
+
+# carpeta con archivos de salida
+notebooks/outputs
+
 # C extensions
 *.so
 
@@ -199,7 +210,7 @@ cython_debug/
 #   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
 #   and can be added to the global gitignore or merged into this file. However, if you prefer, 
 #   you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+.vscode/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
