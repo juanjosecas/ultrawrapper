@@ -21,6 +21,7 @@ def predict_image(
     iou: float = 0.45,
     device: Optional[str] = None,
     task: str = "detect",
+    imgsz: int = 320,
     **kwargs: Any,
 ) -> pd.DataFrame:
     """Run inference on a single image.
@@ -45,7 +46,7 @@ def predict_image(
     device = device or detect_device()
     model = load_model(model_path)
     results = model.predict(
-        image, conf=confidence, iou=iou, device=device, verbose=False, **kwargs
+        image, conf=confidence, iou=iou, device=device, verbose=False, imgsz=imgsz, **kwargs
     )
     return ultralytics_result_to_dataframe(results[0], frame_idx=0)
 
@@ -57,6 +58,7 @@ def predict_images(
     iou: float = 0.45,
     batch_size: int = 8,
     device: Optional[str] = None,
+    imgsz: int = 320,
     **kwargs: Any,
 ) -> pd.DataFrame:
     """Run inference on a list of images, returning a single concatenated DataFrame."""
@@ -67,7 +69,7 @@ def predict_images(
     for start in range(0, len(images), batch_size):
         batch = images[start : start + batch_size]
         results = model.predict(
-            batch, conf=confidence, iou=iou, device=device, verbose=False, **kwargs
+            batch, conf=confidence, iou=iou, device=device, verbose=False, imgsz=imgsz, **kwargs
         )
         for idx, result in enumerate(results):
             df = ultralytics_result_to_dataframe(result, frame_idx=start + idx)
@@ -89,7 +91,7 @@ def predict_video(
     tracking_persist: bool = True,
     save_to: Optional[str | Path] = None,
     save_fmt: str = "parquet",
-    imgsz: int = 640,
+    imgsz: int = 320,
     **kwargs: Any,
 ) -> pd.DataFrame:
     """Run inference or tracking on a video file, frame by frame.

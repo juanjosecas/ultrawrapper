@@ -138,6 +138,8 @@ def images_to_video(
     output_path: str,
     fps: float = 30.0,
     codec: str = "mp4v",
+    size: tuple[int, int] | None = None,
+    size_factor: float | None = None,
 ) -> str:
     """Create a video from image paths without loading the sequence into memory."""
     if not image_paths:
@@ -148,6 +150,10 @@ def images_to_video(
             frame = cv2.imread(image_path)
             if frame is None:
                 raise ValueError(f"Could not read image: {image_path}")
+            if size is not None:
+                frame = cv2.resize(frame, size)
+            if size_factor is not None:
+                frame = cv2.resize(frame, None, fx=size_factor, fy=size_factor)
             yield frame
 
     return write_frames(frames(), output_path, fps=fps, codec=codec)

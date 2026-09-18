@@ -74,6 +74,7 @@ def track_video(
     device: Optional[str] = None,
     batch_size: int = 8,
     save_to: Optional[str | Path] = None,
+    imgsz: int = 320,
     **kwargs: Any,
 ) -> pd.DataFrame:
     """Run multi-object tracking on a video using ByteTrack or BoT-SORT.
@@ -112,6 +113,7 @@ def track_video(
             device=device,
             persist=True,
             verbose=False,
+            imgsz=imgsz,
             **kwargs,
         )
         chunk_dfs: list[pd.DataFrame] = []
